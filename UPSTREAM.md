@@ -11,11 +11,11 @@ This document records how the fork relates to the upstream project and which ups
 
 ## Branch and release policy
 
-- The maintained branch is `main`.
+- `main` is the only maintained branch.
 - Releases are cut from `main`.
-- `dev` is kept only as an upstream mirror and is not used for development in this fork.
 - Release assets must contain the integration files at the ZIP root, without an enclosing `mycloud/` folder. HACS extracts `mycloud.zip` directly into `custom_components/mycloud`.
 - The manifest version, `CHANGELOG.md` and the release tag must be updated together.
+- Versions follow Semantic Versioning and commits follow Conventional Commits. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Upstream triage (2026-11-14)
 

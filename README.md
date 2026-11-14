@@ -167,9 +167,11 @@ CI, HACS validation, hassfest and CodeQL run on every push to `main`.
 
 Issues and pull requests are welcome at [richkmeli/ha-mycloud](https://github.com/richkmeli/ha-mycloud). Add or update tests for behavior changes, run the development checks above, and read [UPSTREAM.md](UPSTREAM.md) before porting upstream work.
 
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) and releases follow [Semantic Versioning](https://semver.org/). See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch policy and release process.
+
 ## Fork and upstream
 
-This fork is based on `J-shw/ha-mycloud` commit `0314bdc`. The maintained branch is `main`; releases are cut from `main`. The fork does not use `dev` for development.
+This fork is based on `J-shw/ha-mycloud` commit `0314bdc`. `main` is the only maintained branch; releases are cut from `main`.
 
 See [UPSTREAM.md](UPSTREAM.md) for the upstream issue and pull-request triage, porting decisions and repository maintenance notes.
 

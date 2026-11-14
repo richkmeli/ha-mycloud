@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `main` is the only maintained branch. Development and releases no longer use `dev`.
+- Added `CONTRIBUTING.md` with the branch policy, Conventional Commits and Semantic Versioning rules.
 - Documentation: the README was rewritten in a text-only format aligned with Home Assistant conventions. Screenshots and CI badges were removed; upstream triage moved to `UPSTREAM.md`.
 - Removed the duplicate `images/` directory. Integration brand assets remain in `custom_components/mycloud/brand`.
 
