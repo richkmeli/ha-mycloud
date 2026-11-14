@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-14
+
+### Changed
+
+- **Breaking:** the minimum supported Home Assistant version is now 2026.8.0. Users on Home Assistant 2025.8–2026.7 stay on release 1.5.0.
+- Disk and volume devices are attached to the NAS with `via_device_id` instead of the deprecated `via_device` field, which Home Assistant will remove in 2027.8. The NAS device is created during setup so its registry ID is available to both platforms.
+- The coordinator sets `always_update=False`, so listeners are notified only when the NAS payload changes.
+- Diagnostics redacts the password with `async_redact_data` in both entry data and options.
+
 ## [1.5.0] - 2026-11-14
 
 ### Added
