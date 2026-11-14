@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-11-15
+
+### Fixed
+
+- Reconfigure and re-authentication now unload the existing entry and release its NAS admin session before validating the new credentials. OS5 allows a single admin session, so the validation previously failed with `invalid_auth` even when the host and credentials were correct.
+- Closing the client now logs out with `DELETE /nas/v1/auth` before closing the local HTTP session. The logout is best effort, so an unreachable NAS cannot block a reload or unload, but it prevents an orphaned admin session from blocking the next login.
+
 ## [3.0.0] - 2026-11-14
 
 ### Added
