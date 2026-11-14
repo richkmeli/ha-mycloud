@@ -48,7 +48,8 @@ def build_device_info(coordinator) -> tuple[DeviceInfo, str, str, str | None]:
     version = data.get("system_version") or {}
 
     entry_id = getattr(coordinator.config_entry, "entry_id", DOMAIN)
-    serial_number = str(device.get("serial_number") or entry_id)
+    reported_serial = str(device.get("serial_number") or "").strip()
+    serial_number = reported_serial or entry_id
     device_name = str(device.get("name") or "WD My Cloud").strip() or "WD My Cloud"
     firmware = version.get("firmware")
 
@@ -64,12 +65,17 @@ def build_device_info(coordinator) -> tuple[DeviceInfo, str, str, str | None]:
         sw_version=firmware,
         configuration_url=configuration_url,
     )
+    if reported_serial:
+        info["serial_number"] = reported_serial
     return info, serial_number, device_name, firmware
 
 
 def disk_key(disk: dict[str, Any]) -> str:
     """Return the stable key used to match a disk across polls."""
-    return str(disk.get("id") or disk.get("sn") or disk.get("name") or "disk")
+    for value in (disk.get("id"), disk.get("sn"), disk.get("name")):
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return "disk"
 
 
 def build_disk_info(
@@ -98,12 +104,17 @@ def build_disk_info(
         hw_version=disk.get("rev"),
         via_device=(DOMAIN, serial_number),
     )
+    if disk_serial := str(disk.get("sn") or "").strip():
+        info["serial_number"] = disk_serial
     return info, key, name
 
 
 def volume_key(volume: dict[str, Any]) -> str:
     """Return the stable key used to match a volume across polls."""
-    return str(volume.get("id") or volume.get("name") or "volume")
+    for value in (volume.get("id"), volume.get("name")):
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return "volume"
 
 
 def build_volume_info(

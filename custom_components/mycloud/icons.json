@@ -1,0 +1,68 @@
+{
+  "entity": {
+    "sensor": {
+      "cpu_usage": {
+        "default": "mdi:cpu-64-bit"
+      },
+      "memory_usage": {
+        "default": "mdi:memory"
+      },
+      "total_storage": {
+        "default": "mdi:database"
+      },
+      "used_storage": {
+        "default": "mdi:database-minus"
+      },
+      "unused_storage": {
+        "default": "mdi:database-plus"
+      },
+      "alert_count": {
+        "default": "mdi:bell-badge-outline"
+      },
+      "latest_alert": {
+        "default": "mdi:bell-alert-outline"
+      },
+      "uptime": {
+        "default": "mdi:timer-outline"
+      },
+      "disk_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "disk_size": {
+        "default": "mdi:harddisk"
+      },
+      "volume_size": {
+        "default": "mdi:harddisk"
+      }
+    },
+    "binary_sensor": {
+      "disk_healthy": {
+        "default": "mdi:shield-check"
+      },
+      "disk_sleeping": {
+        "default": "mdi:sleep"
+      },
+      "disk_failed": {
+        "default": "mdi:alert"
+      },
+      "disk_over_temperature": {
+        "default": "mdi:thermometer-alert"
+      },
+      "disk_connected": {
+        "default": "mdi:harddisk-plus"
+      },
+      "disk_removable": {
+        "default": "mdi:usb"
+      },
+      "volume_mounted": {
+        "default": "mdi:folder-pound"
+      },
+      "volume_unlocked": {
+        "default": "mdi:lock-open"
+      },
+      "volume_encrypted": {
+        "default": "mdi:lock"
+      }
+    }
+  }
+}

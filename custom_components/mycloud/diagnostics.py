@@ -14,7 +14,7 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry with credentials redacted."""
-    coordinator = entry.runtime_data
+    coordinator = getattr(entry, "runtime_data", None)
     data = dict(entry.data)
     data[CONF_PASSWORD] = "**REDACTED**"
 
@@ -23,6 +23,8 @@ async def async_get_config_entry_diagnostics(
             "data": data,
             "options": dict(entry.options),
             "version": entry.version,
+            "title": entry.title,
+            "unique_id": entry.unique_id,
         },
         "coordinator": {
             "last_update_success": getattr(coordinator, "last_update_success", None),

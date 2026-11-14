@@ -21,6 +21,7 @@ def entry():
     entry = MagicMock()
     entry.entry_id = "entry-1"
     entry.options = {}
+    entry.data = {"Host": "nas.local"}
     return entry
 
 
@@ -175,8 +176,80 @@ async def test_update_server_error(coordinator, client):
     """A non-auth HTTP error is reported as UpdateFailed."""
     client.system_info.side_effect = RequestFailedError(500)
 
-    with pytest.raises(UpdateFailed):
+    with pytest.raises(UpdateFailed) as err:
         await coordinator._async_update_data()
+
+    assert err.value.translation_key == "fetch_failed"
+
+
+@pytest.mark.parametrize(
+    ("side_effect", "exception", "key"),
+    [
+        (InvalidLoginError("bad"), ConfigEntryAuthFailed, "invalid_auth"),
+        (RequestFailedError(401), ConfigEntryAuthFailed, "invalid_auth"),
+        (RequestFailedError(403), ConfigEntryAuthFailed, "invalid_auth"),
+        (RequestFailedError(500), UpdateFailed, "reconnect_failed"),
+        (RuntimeError("boom"), UpdateFailed, "reconnect_failed"),
+    ],
+)
+async def test_update_reconnect_errors(
+    coordinator, client, side_effect, exception, key
+):
+    """A failing reconnect is translated before it reaches the user."""
+    client.session = None
+    client.async_reconnect.side_effect = side_effect
+
+    with pytest.raises(exception) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == key
+
+
+@pytest.mark.parametrize(
+    ("side_effect", "exception", "key"),
+    [
+        (RequestFailedError(401), ConfigEntryAuthFailed, "invalid_auth"),
+        (RequestFailedError(403), ConfigEntryAuthFailed, "invalid_auth"),
+        (RequestFailedError(500), UpdateFailed, "reauth_fetch_failed"),
+        (RuntimeError("boom"), UpdateFailed, "reauth_fetch_failed"),
+    ],
+)
+async def test_update_retry_after_session_expiry_errors(
+    coordinator, client, side_effect, exception, key
+):
+    """A failed retry after a session expiry is translated."""
+    client.system_info.side_effect = RequestFailedError(403)
+
+    async def reconnect() -> None:
+        client.system_info.side_effect = side_effect
+
+    client.async_reconnect.side_effect = reconnect
+
+    with pytest.raises(exception) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == key
+
+
+async def test_update_unexpected_error_is_translated(coordinator, client):
+    """An unexpected fetch error is reported with a translation key."""
+    client.system_info.side_effect = RuntimeError("boom")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == "unexpected_fetch_failed"
+
+
+async def test_update_connection_error_is_translated(coordinator, client):
+    """A transport error includes the configured host in the placeholders."""
+    client.system_info.side_effect = TimeoutError()
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == "cannot_connect"
+    assert err.value.translation_placeholders == {"host": "nas.local", "error": ""}
 
 
 async def test_update_timeout(coordinator, client):

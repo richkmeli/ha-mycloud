@@ -8,6 +8,7 @@ CONF_HOST = "Host"
 CONF_USERNAME = "Username"
 CONF_PASSWORD = "Password"  # noqa: S105
 CONF_VERSION = "Version"
+CONF_SERIAL = "Serial"
 CONF_UPDATE_INTERVAL = "update_interval"
 
 DEFAULT_UPDATE_INTERVAL = 600

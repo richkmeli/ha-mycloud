@@ -15,11 +15,13 @@ This is a community fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-myclo
 - **Uptime** — OS5 uptime, including a `cgi_get_status` fallback for firmware that fails the dedicated uptime command.
 - **Config flow** — host, connection and credentials are validated before the entry is created.
 - **Reconfigure** — change the address, credentials or software version without removing the entry.
+- **Stable identity** — the NAS serial number identifies the config entry and survives address changes.
 - **Re-authentication** — Home Assistant asks for the password again when the NAS rejects the stored credentials.
 - **Options** — configurable polling interval.
 - **Automatic topology refresh** — entities for new disks and volumes are created without a manual reload.
+- **Stale device removal** — disks and volumes that are no longer reported can be removed from the device page.
 - **Diagnostics** — downloadable diagnostics with the password redacted.
-- **Translations** — English and Italian.
+- **Translations** — English and Italian, including entity names and setup errors.
 
 ## Requirements
 
@@ -54,13 +56,13 @@ This fork is not in the default HACS store. Add it as a custom repository:
    - **Host** — IP address or hostname of the NAS, optionally with a port. Examples: `192.168.1.10`, `wdmycloud.local`, `nas.local:8080`. Do not include `http://`, `https://`, a path or credentials.
    - **Username** and **Password** — credentials of an admin account.
    - **Software version** — `2` for OS2 or `5` for OS5.
-4. The integration logs in, reads the device information and creates the entry only if the NAS responds correctly.
+4. The integration logs in, reads the device information and creates the entry only if the NAS responds correctly. The NAS serial number becomes the entry identity, so changing the host later does not create a duplicate entry.
 
 The host field is validated. Schemes, paths, query strings, fragments and `user:password@host` values are rejected.
 
 ### Reconfigure
 
-Open the integration entry and choose **Reconfigure** to change the host, username, password or software version. The new connection is validated before saving. If the host changes, the unique ID and the entry title are updated, and the integration reloads automatically.
+Open the integration entry and choose **Reconfigure** to change the host, username, password or software version. The new connection is validated before saving, and the NAS serial number is checked so the entry stays linked to the same physical device. To connect a different NAS, add a new integration entry. The entry reloads automatically after saving.
 
 ## Options
 
@@ -96,9 +98,9 @@ Entity IDs depend on the device name. The examples below use `wd_my_cloud`; your
 - Volume unlocked — `binary_sensor.wd_my_cloud_volume_[volume_name]_unlocked`
 - Volume encrypted — `binary_sensor.wd_my_cloud_volume_[volume_name]_encrypted`
 
-`[disk_name]` and `[volume_name]` are replaced by the values reported by the NAS. When disks or volumes are added, removed or replaced, the integration detects the change and reloads itself, so entities for new hardware are created without a manual step. If hardware is removed, its entities become unavailable; they return with their history when the hardware is reconnected, or they can be deleted from the entity registry if it will not come back.
+`[disk_name]` and `[volume_name]` are replaced by the values reported by the NAS. When disks or volumes are added, removed or replaced, the integration detects the change and reloads itself, so entities for new hardware are created without a manual step. If hardware is removed, its entities become unavailable; they return with their history when the hardware is reconnected. A disk or volume that will not come back can be deleted from its device page, and its entities are removed with it.
 
-Entity names are in English and use the Home Assistant entity-naming convention. CPU, memory, uptime, alert, disk sleep, removable and volume encryption/unlock entities are marked as diagnostic. The alert sensors are optional: if the NAS does not expose the alert log, only those two entities become unavailable. The uptime sensor is created on OS5 only.
+Entity names use the Home Assistant entity-naming convention and are translated into English and Italian; existing entity IDs are preserved. CPU, memory, uptime, alert, disk sleep, removable and volume encryption/unlock entities are marked as diagnostic. The alert sensors are optional: if the NAS does not expose the alert log, only those two entities become unavailable. The uptime sensor is created on OS5 only.
 
 ## Security
 
@@ -162,12 +164,13 @@ Go to **Settings → Devices & services → WD My Cloud → ⋮ → Download dia
 python -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-test.txt
-pytest
+pytest --cov=custom_components/mycloud --cov-report=term-missing --cov-report=json
+python scripts/check_coverage.py
 ruff check custom_components tests
 ruff format --check custom_components tests
 ```
 
-The test suite covers host validation, config flow errors, setup and unload lifecycle, coordinator re-authentication, entity values and static security checks.
+The test suite covers host validation, config flow errors, setup and unload lifecycle, unique ID migration, stale device removal, coordinator re-authentication, entity values, translations and static security checks. CI requires at least 95% line coverage for every module of the integration.
 
 CI, HACS validation, hassfest and CodeQL run on every push to `main`.
 

@@ -9,6 +9,12 @@
           "Username": "Nome utente",
           "Password": "Password",
           "Version": "Versione software"
+        },
+        "data_description": {
+          "Host": "Indirizzo IP o hostname, facoltativamente con porta. Non includere http:// o https://.",
+          "Username": "Account amministratore usato per accedere al NAS.",
+          "Password": "Password dell'account amministratore. Il firmware WD consente una sola sessione admin attiva.",
+          "Version": "2 per il firmware OS2, 5 per il firmware OS5."
         }
       },
       "reauth_confirm": {
@@ -16,16 +22,25 @@
         "description": "Il NAS ha rifiutato le credenziali salvate. Inserisci di nuovo la password.",
         "data": {
           "Password": "Password"
+        },
+        "data_description": {
+          "Password": "Password dell'account amministratore."
         }
       },
       "reconfigure": {
         "title": "Riconfigura WD My Cloud",
-        "description": "Aggiorna indirizzo, credenziali o versione software del NAS. La voce viene ricaricata dopo il salvataggio.",
+        "description": "Aggiorna indirizzo, credenziali o versione software del NAS. Il numero di serie viene verificato per mantenere questa voce collegata allo stesso NAS.",
         "data": {
           "Host": "Host",
           "Username": "Nome utente",
           "Password": "Password",
           "Version": "Versione software"
+        },
+        "data_description": {
+          "Host": "Indirizzo IP o hostname, facoltativamente con porta. Non includere http:// o https://.",
+          "Username": "Account amministratore usato per accedere al NAS.",
+          "Password": "Password dell'account amministratore.",
+          "Version": "2 per il firmware OS2, 5 per il firmware OS5."
         }
       }
     },
@@ -36,7 +51,8 @@
       "unknown": "Errore imprevisto."
     },
     "abort": {
-      "already_configured": "Questo NAS è già configurato."
+      "already_configured": "Questo NAS è già configurato.",
+      "wrong_device": "Il NAS a questo indirizzo è un dispositivo diverso. Aggiungilo come nuova integrazione invece di riconfigurare questa voce."
     }
   },
   "options": {
@@ -46,8 +62,97 @@
         "description": "L'intervallo di aggiornamento deve essere compreso tra {min_interval} e {max_interval} secondi.",
         "data": {
           "update_interval": "Intervallo di aggiornamento (secondi)"
+        },
+        "data_description": {
+          "update_interval": "Secondi tra un aggiornamento e l'altro. Il valore predefinito è 600."
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "cpu_usage": {
+        "name": "Utilizzo CPU"
+      },
+      "memory_usage": {
+        "name": "Utilizzo memoria"
+      },
+      "total_storage": {
+        "name": "Archiviazione totale"
+      },
+      "used_storage": {
+        "name": "Archiviazione usata"
+      },
+      "unused_storage": {
+        "name": "Archiviazione libera"
+      },
+      "alert_count": {
+        "name": "Numero di avvisi"
+      },
+      "latest_alert": {
+        "name": "Ultimo avviso"
+      },
+      "uptime": {
+        "name": "Tempo di attività"
+      },
+      "disk_temperature": {
+        "name": "Temperatura"
+      },
+      "disk_size": {
+        "name": "Dimensione"
+      },
+      "volume_size": {
+        "name": "Dimensione"
+      }
+    },
+    "binary_sensor": {
+      "disk_healthy": {
+        "name": "Integro"
+      },
+      "disk_sleeping": {
+        "name": "In sospensione"
+      },
+      "disk_failed": {
+        "name": "Guasto"
+      },
+      "disk_over_temperature": {
+        "name": "Sovratemperatura"
+      },
+      "disk_connected": {
+        "name": "Connesso"
+      },
+      "disk_removable": {
+        "name": "Rimovibile"
+      },
+      "volume_mounted": {
+        "name": "Montato"
+      },
+      "volume_unlocked": {
+        "name": "Sbloccato"
+      },
+      "volume_encrypted": {
+        "name": "Cifrato"
+      }
+    }
+  },
+  "exceptions": {
+    "invalid_auth": {
+      "message": "Credenziali WD My Cloud non valide."
+    },
+    "cannot_connect": {
+      "message": "Impossibile connettersi a {host}: {error}"
+    },
+    "reconnect_failed": {
+      "message": "Impossibile riconnettersi al NAS: {error}"
+    },
+    "fetch_failed": {
+      "message": "Errore durante il recupero dei dati dal NAS: {error}"
+    },
+    "reauth_fetch_failed": {
+      "message": "Recupero dei dati non riuscito dopo la riautenticazione: {error}"
+    },
+    "unexpected_fetch_failed": {
+      "message": "Errore imprevisto durante il recupero dei dati dal NAS: {error}"
     }
   }
 }

@@ -23,6 +23,7 @@ from .client import MyCloudClient, status_code
 from .const import (
     CONF_HOST,
     CONF_PASSWORD,
+    CONF_SERIAL,
     CONF_UPDATE_INTERVAL,
     CONF_USERNAME,
     CONF_VERSION,
@@ -115,9 +116,6 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except ValueError:
                 errors["base"] = "invalid_host"
             else:
-                await self.async_set_unique_id(host)
-                self._abort_if_unique_id_configured()
-
                 client = MyCloudClient(
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
@@ -125,11 +123,13 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input[CONF_VERSION],
                 )
                 title = host
+                serial = ""
                 try:
                     await client.async_connect()
                     device = await client.device_info()
                     await client.system_info()
                     title = str(device.get("name") or host).strip() or host
+                    serial = str(device.get("serial_number") or "").strip()
                 except InvalidLoginError:
                     errors["base"] = "invalid_auth"
                 except RequestFailedError as err:
@@ -147,10 +147,13 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await client.async_close()
 
                 if not errors:
-                    return self.async_create_entry(
-                        title=title,
-                        data={**user_input, CONF_HOST: host},
-                    )
+                    unique_id = serial or host
+                    await self.async_set_unique_id(unique_id)
+                    self._abort_if_unique_id_configured()
+                    data = {**user_input, CONF_HOST: host}
+                    if serial:
+                        data[CONF_SERIAL] = serial
+                    return self.async_create_entry(title=title, data=data)
 
         return self.async_show_form(
             step_id="user",
@@ -250,11 +253,13 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input[CONF_VERSION],
                 )
                 title = host
+                serial = ""
                 try:
                     await client.async_connect()
                     device = await client.device_info()
                     await client.system_info()
                     title = str(device.get("name") or host).strip() or host
+                    serial = str(device.get("serial_number") or "").strip()
                 except InvalidLoginError:
                     errors["base"] = "invalid_auth"
                 except RequestFailedError as err:
@@ -272,14 +277,30 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await client.async_close()
 
                 if not errors:
-                    if host != entry.unique_id:
-                        await self.async_set_unique_id(host)
-                        self._abort_if_unique_id_configured()
+                    stored_serial = str(entry.data.get(CONF_SERIAL) or "").strip()
+                    legacy_unique_id = entry.unique_id == entry.data.get(CONF_HOST)
+                    if serial:
+                        if stored_serial:
+                            if serial != stored_serial:
+                                await self.async_set_unique_id(serial)
+                                self._abort_if_unique_id_mismatch(reason="wrong_device")
+                        elif legacy_unique_id:
+                            # Entries created before 1.5.0 use the host as unique
+                            # ID. Migrate them once, after checking for duplicates.
+                            await self.async_set_unique_id(serial)
+                            self._abort_if_unique_id_configured()
+                        else:
+                            await self.async_set_unique_id(serial)
+                            self._abort_if_unique_id_mismatch(reason="wrong_device")
+
+                    data = {**entry.data, **user_input, CONF_HOST: host}
+                    if serial:
+                        data[CONF_SERIAL] = serial
                     return self.async_update_reload_and_abort(
                         entry,
-                        unique_id=host,
+                        unique_id=serial or entry.unique_id,
                         title=title,
-                        data={**entry.data, **user_input, CONF_HOST: host},
+                        data=data,
                     )
 
         return self.async_show_form(

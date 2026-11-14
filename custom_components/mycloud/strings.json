@@ -9,6 +9,12 @@
           "Username": "Username",
           "Password": "Password",
           "Version": "Software version"
+        },
+        "data_description": {
+          "Host": "IP address or hostname, optionally with a port. Do not include http:// or https://.",
+          "Username": "Admin account used to sign in to the NAS.",
+          "Password": "Password for the admin account. WD firmware allows only one active admin session.",
+          "Version": "2 for OS2 firmware, 5 for OS5 firmware."
         }
       },
       "reauth_confirm": {
@@ -16,16 +22,25 @@
         "description": "The NAS rejected the stored credentials. Enter the password again.",
         "data": {
           "Password": "Password"
+        },
+        "data_description": {
+          "Password": "Password for the admin account."
         }
       },
       "reconfigure": {
         "title": "Reconfigure WD My Cloud",
-        "description": "Update the NAS address, credentials or software version. The entry reloads after saving.",
+        "description": "Update the NAS address, credentials or software version. The serial number is checked to keep this entry linked to the same NAS.",
         "data": {
           "Host": "Host",
           "Username": "Username",
           "Password": "Password",
           "Version": "Software version"
+        },
+        "data_description": {
+          "Host": "IP address or hostname, optionally with a port. Do not include http:// or https://.",
+          "Username": "Admin account used to sign in to the NAS.",
+          "Password": "Password for the admin account.",
+          "Version": "2 for OS2 firmware, 5 for OS5 firmware."
         }
       }
     },
@@ -36,7 +51,8 @@
       "unknown": "Unexpected error."
     },
     "abort": {
-      "already_configured": "This NAS is already configured."
+      "already_configured": "This NAS is already configured.",
+      "wrong_device": "The NAS at this address is a different device. Add it as a new integration entry instead of reconfiguring this one."
     }
   },
   "options": {
@@ -46,8 +62,97 @@
         "description": "Polling interval must be between {min_interval} and {max_interval} seconds.",
         "data": {
           "update_interval": "Update interval (seconds)"
+        },
+        "data_description": {
+          "update_interval": "Seconds between polls. The default is 600."
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "cpu_usage": {
+        "name": "CPU usage"
+      },
+      "memory_usage": {
+        "name": "Memory usage"
+      },
+      "total_storage": {
+        "name": "Total storage"
+      },
+      "used_storage": {
+        "name": "Used storage"
+      },
+      "unused_storage": {
+        "name": "Unused storage"
+      },
+      "alert_count": {
+        "name": "Alert count"
+      },
+      "latest_alert": {
+        "name": "Latest alert"
+      },
+      "uptime": {
+        "name": "Uptime"
+      },
+      "disk_temperature": {
+        "name": "Temperature"
+      },
+      "disk_size": {
+        "name": "Size"
+      },
+      "volume_size": {
+        "name": "Size"
+      }
+    },
+    "binary_sensor": {
+      "disk_healthy": {
+        "name": "Healthy"
+      },
+      "disk_sleeping": {
+        "name": "Sleeping"
+      },
+      "disk_failed": {
+        "name": "Failed"
+      },
+      "disk_over_temperature": {
+        "name": "Over temperature"
+      },
+      "disk_connected": {
+        "name": "Connected"
+      },
+      "disk_removable": {
+        "name": "Removable"
+      },
+      "volume_mounted": {
+        "name": "Mounted"
+      },
+      "volume_unlocked": {
+        "name": "Unlocked"
+      },
+      "volume_encrypted": {
+        "name": "Encrypted"
+      }
+    }
+  },
+  "exceptions": {
+    "invalid_auth": {
+      "message": "Invalid WD My Cloud credentials."
+    },
+    "cannot_connect": {
+      "message": "Unable to connect to {host}: {error}"
+    },
+    "reconnect_failed": {
+      "message": "Cannot reconnect to the NAS: {error}"
+    },
+    "fetch_failed": {
+      "message": "Error fetching data from the NAS: {error}"
+    },
+    "reauth_fetch_failed": {
+      "message": "Failed to fetch data after re-authentication: {error}"
+    },
+    "unexpected_fetch_failed": {
+      "message": "Unexpected error fetching data from the NAS: {error}"
     }
   }
 }

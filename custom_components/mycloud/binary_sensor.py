@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -19,6 +22,8 @@ from .entity import (
     get_disk,
     get_volume,
 )
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
@@ -102,15 +107,13 @@ class MyCloudBinarySensorBase(CoordinatorEntity, BinarySensorEntity):
         coordinator: MyCloudCoordinator,
         device_info,
         unique_id: str,
-        name: str,
-        icon: str,
+        translation_key: str,
     ) -> None:
         """Initialize the binary sensor."""
         super().__init__(coordinator)
         self._attr_device_info = device_info
         self._attr_unique_id = unique_id
-        self._attr_name = name
-        self._attr_icon = icon
+        self._attr_translation_key = translation_key
 
 
 class MyCloudDiskHealthySensor(MyCloudBinarySensorBase):
@@ -122,8 +125,7 @@ class MyCloudDiskHealthySensor(MyCloudBinarySensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_healthy",
-            "Healthy",
-            "mdi:shield-check",
+            "disk_healthy",
         )
         self._disk_key = disk_key
 
@@ -145,8 +147,7 @@ class MyCloudDiskSleepSensor(MyCloudBinarySensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_sleep",
-            "Sleeping",
-            "mdi:sleep",
+            "disk_sleeping",
         )
         self._disk_key = disk_key
 
@@ -160,14 +161,15 @@ class MyCloudDiskSleepSensor(MyCloudBinarySensorBase):
 class MyCloudDiskFailedSensor(MyCloudBinarySensorBase):
     """Whether the disk reports a failure."""
 
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+
     def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_failed",
-            "Failed",
-            "mdi:alert",
+            "disk_failed",
         )
         self._disk_key = disk_key
 
@@ -181,14 +183,15 @@ class MyCloudDiskFailedSensor(MyCloudBinarySensorBase):
 class MyCloudDiskOverTemperatureSensor(MyCloudBinarySensorBase):
     """Whether the disk is over temperature."""
 
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+
     def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_over_temp",
-            "Over Temperature",
-            "mdi:thermometer-alert",
+            "disk_over_temperature",
         )
         self._disk_key = disk_key
 
@@ -202,14 +205,15 @@ class MyCloudDiskOverTemperatureSensor(MyCloudBinarySensorBase):
 class MyCloudDiskConnectedSensor(MyCloudBinarySensorBase):
     """Whether the disk is currently connected."""
 
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+
     def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_connected",
-            "Connected",
-            "mdi:harddisk-plus",
+            "disk_connected",
         )
         self._disk_key = disk_key
 
@@ -231,8 +235,7 @@ class MyCloudDiskRemovableSensor(MyCloudBinarySensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_removable",
-            "Removable",
-            "mdi:usb",
+            "disk_removable",
         )
         self._disk_key = disk_key
 
@@ -252,8 +255,7 @@ class MyCloudVolumeMountedSensor(MyCloudBinarySensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{volume_key}_volume_mounted",
-            "Mounted",
-            "mdi:folder-pound",
+            "volume_mounted",
         )
         self._volume_key = volume_key
 
@@ -275,8 +277,7 @@ class MyCloudVolumeUnlockedSensor(MyCloudBinarySensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{volume_key}_volume_unlocked",
-            "Unlocked",
-            "mdi:lock-open",
+            "volume_unlocked",
         )
         self._volume_key = volume_key
 
@@ -298,8 +299,7 @@ class MyCloudVolumeEncryptedSensor(MyCloudBinarySensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{volume_key}_volume_encrypted",
-            "Encrypted",
-            "mdi:lock",
+            "volume_encrypted",
         )
         self._volume_key = volume_key
 

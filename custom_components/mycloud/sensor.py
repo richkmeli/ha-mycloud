@@ -33,6 +33,8 @@ from .entity import (
     latest_alert,
 )
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -51,30 +53,9 @@ async def async_setup_entry(
     sensors: list[SensorEntity] = [
         MyCloudCPUSensor(coordinator, device_info, serial_number),
         MyCloudMemorySensor(coordinator, device_info, serial_number),
-        MyCloudStorageSensor(
-            coordinator,
-            device_info,
-            serial_number,
-            "total",
-            "Total Storage",
-            "mdi:database",
-        ),
-        MyCloudStorageSensor(
-            coordinator,
-            device_info,
-            serial_number,
-            "used",
-            "Used Storage",
-            "mdi:database-minus",
-        ),
-        MyCloudStorageSensor(
-            coordinator,
-            device_info,
-            serial_number,
-            "unused",
-            "Unused Storage",
-            "mdi:database-plus",
-        ),
+        MyCloudStorageSensor(coordinator, device_info, serial_number, "total"),
+        MyCloudStorageSensor(coordinator, device_info, serial_number, "used"),
+        MyCloudStorageSensor(coordinator, device_info, serial_number, "unused"),
         MyCloudAlertCountSensor(coordinator, device_info, serial_number),
         MyCloudLatestAlertSensor(coordinator, device_info, serial_number),
     ]
@@ -125,23 +106,20 @@ class MyCloudSensorBase(CoordinatorEntity, SensorEntity):
         coordinator: MyCloudCoordinator,
         device_info,
         unique_id: str,
-        name: str,
+        translation_key: str,
         *,
         unit: str | None = None,
         device_class: SensorDeviceClass | None = None,
-        icon: str | None = None,
         suggested_unit: str | None = None,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._attr_device_info = device_info
         self._attr_unique_id = unique_id
-        self._attr_name = name
+        self._attr_translation_key = translation_key
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
         self._attr_suggested_unit_of_measurement = suggested_unit
-        if icon is not None:
-            self._attr_icon = icon
 
 
 class MyCloudCPUSensor(MyCloudSensorBase):
@@ -155,9 +133,8 @@ class MyCloudCPUSensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_cpu_usage",
-            "CPU Usage",
+            "cpu_usage",
             unit=PERCENTAGE,
-            icon="mdi:cpu-64-bit",
         )
 
     @property
@@ -178,9 +155,8 @@ class MyCloudMemorySensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_memory_usage",
-            "Memory Usage",
+            "memory_usage",
             unit=PERCENTAGE,
-            icon="mdi:memory",
         )
 
     @property
@@ -204,18 +180,15 @@ class MyCloudStorageSensor(MyCloudSensorBase):
         device_info,
         serial_number,
         value_key,
-        label,
-        icon,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{value_key}_storage",
-            label,
+            f"{value_key}_storage",
             unit=UnitOfInformation.BYTES,
             device_class=SensorDeviceClass.DATA_SIZE,
-            icon=icon,
             suggested_unit=UnitOfInformation.TERABYTES,
         )
         self._value_key = value_key
@@ -239,8 +212,7 @@ class MyCloudAlertCountSensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_alert_count",
-            "Alert Count",
-            icon="mdi:bell-badge-outline",
+            "alert_count",
         )
 
     @property
@@ -268,8 +240,7 @@ class MyCloudLatestAlertSensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_latest_alert",
-            "Latest Alert",
-            icon="mdi:bell-alert-outline",
+            "latest_alert",
         )
 
     @property
@@ -313,10 +284,9 @@ class MyCloudUptimeSensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_uptime",
-            "Uptime",
+            "uptime",
             unit=UnitOfTime.SECONDS,
             device_class=SensorDeviceClass.DURATION,
-            icon="mdi:timer-outline",
             suggested_unit=UnitOfTime.HOURS,
         )
 
@@ -335,10 +305,9 @@ class MyCloudDiskTemperatureSensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_temp",
-            "Temperature",
+            "disk_temperature",
             unit=UnitOfTemperature.CELSIUS,
             device_class=SensorDeviceClass.TEMPERATURE,
-            icon="mdi:thermometer",
         )
         self._disk_key = disk_key
 
@@ -358,10 +327,9 @@ class MyCloudDiskSizeSensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_size",
-            "Size",
+            "disk_size",
             unit=UnitOfInformation.BYTES,
             device_class=SensorDeviceClass.DATA_SIZE,
-            icon="mdi:harddisk",
             suggested_unit=UnitOfInformation.TERABYTES,
         )
         self._disk_key = disk_key
@@ -382,10 +350,9 @@ class MyCloudVolumeSizeSensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{volume_key}_volume_size",
-            "Size",
+            "volume_size",
             unit=UnitOfInformation.BYTES,
             device_class=SensorDeviceClass.DATA_SIZE,
-            icon="mdi:harddisk",
             suggested_unit=UnitOfInformation.TERABYTES,
         )
         self._volume_key = volume_key

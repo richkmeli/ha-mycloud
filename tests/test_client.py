@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
-from wdnas_client.exceptions import RequestFailedError
+import pytest
+from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
-from custom_components.mycloud.client import MyCloudClient, parse_uptime_text
+from custom_components.mycloud.client import (
+    MyCloudClient,
+    parse_uptime_text,
+    status_code,
+)
 
 
 class _FakeResponse:
@@ -45,6 +50,107 @@ def test_parse_uptime_text():
     assert parse_uptime_text("1 day 2 hours 3 minutes") == 93_780
     assert parse_uptime_text("2 days 0 hour 0 minutes") == 172_800
     assert parse_uptime_text("not an uptime") is None
+
+
+def test_status_code_extracts_http_status():
+    """The HTTP status is extracted from the upstream exception message."""
+    assert status_code(RequestFailedError(404)) == 404
+    assert status_code(Exception("not an HTTP error")) is None
+
+
+async def test_connect_reconnect_and_close_use_the_session_lock():
+    """The public lifecycle methods delegate to the locked helpers."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client._async_open = AsyncMock()
+    client._async_close_locked = AsyncMock()
+
+    await client.async_connect()
+    await client.async_reconnect()
+    await client.async_close()
+
+    assert client._async_open.await_count == 2
+    client._async_close_locked.assert_awaited_once()
+
+
+async def test_async_open_creates_a_bounded_session_and_logs_in():
+    """Opening the client replaces the session and authenticates."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    session = MagicMock()
+    session.closed = False
+    session.close = AsyncMock()
+    client.login = AsyncMock()
+
+    with patch(
+        "custom_components.mycloud.client.aiohttp.ClientSession",
+        return_value=session,
+    ) as session_cls:
+        await client._async_open()
+
+    session_cls.assert_called_once()
+    client.login.assert_awaited_once()
+    assert client.session is session
+
+
+async def test_async_open_closes_the_session_when_login_fails():
+    """A failed login does not leak the new aiohttp session."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    session = MagicMock()
+    session.closed = False
+    session.close = AsyncMock()
+    client.login = AsyncMock(side_effect=InvalidLoginError("bad"))
+
+    with (
+        patch(
+            "custom_components.mycloud.client.aiohttp.ClientSession",
+            return_value=session,
+        ),
+        pytest.raises(InvalidLoginError),
+    ):
+        await client._async_open()
+
+    assert client.session is None
+    session.close.assert_awaited_once()
+
+
+async def test_close_locked_closes_only_open_sessions():
+    """Closing an open session releases it and clears the reference."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    session = MagicMock()
+    session.closed = False
+    session.close = AsyncMock()
+    client.session = session
+
+    await client._async_close_locked()
+
+    session.close.assert_awaited_once()
+    assert client.session is None
+
+
+async def test_close_locked_skips_already_closed_sessions():
+    """An already closed session is not closed twice."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    session = MagicMock()
+    session.closed = True
+    session.close = AsyncMock()
+    client.session = session
+
+    await client._async_close_locked()
+
+    session.close.assert_not_awaited()
+    assert client.session is None
+
+
+async def test_client_context_manager_opens_and_closes():
+    """The async context manager exposes the client and closes it."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client.async_connect = AsyncMock()
+    client.async_close = AsyncMock()
+
+    async with client as entered:
+        assert entered is client
+
+    client.async_connect.assert_awaited_once()
+    client.async_close.assert_awaited_once()
 
 
 async def test_async_uptime_falls_back_to_status():
@@ -99,4 +205,22 @@ async def test_uptime_from_status_returns_none_on_error():
     assert await client._async_uptime_from_status() is None
 
     client.session = _FakeSession(_FakeResponse(200, "no uptime here"))
+    assert await client._async_uptime_from_status() is None
+
+
+async def test_uptime_from_status_without_session_is_none():
+    """The fallback is a no-op when the session is missing."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client.session = None
+
+    assert await client._async_uptime_from_status() is None
+
+
+async def test_uptime_from_status_handles_transport_errors():
+    """A transport error during the fallback does not propagate."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    session = MagicMock()
+    session.post.side_effect = aiohttp.ClientError("offline")
+    client.session = session
+
     assert await client._async_uptime_from_status() is None
