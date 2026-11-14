@@ -1,41 +1,84 @@
-import logging
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from .const import DOMAIN, HOST, USERNAME, PASSWORD, VERSION
+"""WD My Cloud integration for Home Assistant."""
 
+from __future__ import annotations
+
+import logging
+
+import aiohttp
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
+
+from .client import MyCloudClient, status_code
+from .const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, CONF_VERSION, DOMAIN
+from .coordinator import MyCloudCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    _LOGGER.info("Setting up My Cloud integration")
+    """Set up WD My Cloud from a config entry."""
+    host = entry.data[CONF_HOST]
+    client = MyCloudClient(
+        entry.data[CONF_USERNAME],
+        entry.data[CONF_PASSWORD],
+        host,
+        entry.data[CONF_VERSION],
+    )
 
-    host = entry.data["Host"]
-    username = entry.data["Username"]
-    password = entry.data["Password"]
-    version = entry.data["Version"]
+    try:
+        await client.async_connect()
+    except InvalidLoginError as err:
+        raise ConfigEntryAuthFailed("Invalid WD My Cloud credentials") from err
+    except RequestFailedError as err:
+        if status_code(err) in (401, 403):
+            raise ConfigEntryAuthFailed("Invalid WD My Cloud credentials") from err
+        raise ConfigEntryNotReady(f"Cannot connect to {host}: {err}") from err
+    except (TimeoutError, aiohttp.ClientError, OSError) as err:
+        raise ConfigEntryNotReady(f"Cannot connect to {host}: {err}") from err
 
-    hass.data.setdefault(DOMAIN, {})[HOST] = host
-    hass.data.setdefault(DOMAIN, {})[USERNAME] = username
-    hass.data.setdefault(DOMAIN, {})[PASSWORD] = password
-    hass.data.setdefault(DOMAIN, {})[VERSION] = version
+    coordinator = MyCloudCoordinator(hass, entry, client)
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception:
+        await coordinator.async_close()
+        raise
 
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
-
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        await coordinator.async_close()
+        raise
 
     return True
 
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
-    
-    if unload_ok:
-        pass
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unload_ok:
+        return False
 
-    return unload_ok
+    coordinator: MyCloudCoordinator | None = hass.data.get(DOMAIN, {}).pop(
+        entry.entry_id, None
+    )
+    if coordinator is not None:
+        await coordinator.async_close()
+
+    if not hass.data.get(DOMAIN):
+        hass.data.pop(DOMAIN, None)
+
+    return True
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry."""
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry when its options change."""
     await hass.config_entries.async_reload(entry.entry_id)

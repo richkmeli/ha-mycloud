@@ -1,4 +1,8 @@
 {
-	"name": "mycloud",
-	"content_in_root": false
+  "name": "WD My Cloud",
+  "zip_release": true,
+  "hide_default_branch": true,
+  "render_readme": true,
+  "homeassistant": "2025.8.0",
+  "filename": "mycloud.zip"
 }

@@ -1,0 +1,42 @@
+---
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and upload release asset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      # HACS extracts the release asset directly into custom_components/mycloud,
+      # so the files must be at the ROOT of the zip (no enclosing "mycloud/").
+      - name: Build HACS-compatible zip
+        run: |
+          cd custom_components/mycloud
+          zip -r "$GITHUB_WORKSPACE/mycloud.zip" .
+
+      - name: Verify HACS-compatible layout
+        run: |
+          unzip -Z1 mycloud.zip > /tmp/zip-contents.txt
+          grep -qx 'manifest.json' /tmp/zip-contents.txt
+          grep -qx '__init__.py' /tmp/zip-contents.txt
+          if grep -q '^mycloud/' /tmp/zip-contents.txt; then
+            echo "ERROR: the zip contains an enclosing mycloud/ folder" >&2
+            exit 1
+          fi
+          cat /tmp/zip-contents.txt
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: mycloud.zip

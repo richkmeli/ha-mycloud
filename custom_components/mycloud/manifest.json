@@ -1,11 +1,12 @@
 {
   "domain": "mycloud",
-  "name": "My Cloud",
-  "codeowners": ["@J-shw"],
+  "name": "WD My Cloud",
+  "codeowners": ["@richkmeli"],
   "config_flow": true,
-  "documentation": "https://github.com/J-shw/wdnas_hacs",
+  "documentation": "https://github.com/richkmeli/ha-mycloud",
+  "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/J-shw/wdnas_hacs/issues",
-  "requirements": ["wdnas-client>=0.9.4"],
-  "version": "1.2.5"
+  "issue_tracker": "https://github.com/richkmeli/ha-mycloud/issues",
+  "requirements": ["wdnas-client==0.9.4"],
+  "version": "1.3.0"
 }

@@ -1,83 +1,157 @@
 # <img src="images/icon.png" alt="WD My Cloud App Icon" width="100"> ha-mycloud
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=J-shw&repository=ha-mycloud&category=Integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=richkmeli&repository=ha-mycloud&category=Integration)
+[![CI](https://github.com/richkmeli/ha-mycloud/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/richkmeli/ha-mycloud/actions/workflows/ci.yml)
+[![HACS Action](https://github.com/richkmeli/ha-mycloud/actions/workflows/validate.yml/badge.svg)](https://github.com/richkmeli/ha-mycloud/actions/workflows/validate.yml)
+[![Validate with hassfest](https://github.com/richkmeli/ha-mycloud/actions/workflows/hassfest.yml/badge.svg)](https://github.com/richkmeli/ha-mycloud/actions/workflows/hassfest.yml)
 
-Home Assistant integration for Western Digital My Cloud NAS devices.
+Home Assistant integration for Western Digital My Cloud NAS devices (OS2 and OS5).
 
-This integration is powered by the [wdnas-client](https://github.com/J-shw/wdnas_client) Python library, which handles all communication with the NAS.
+This repository is a maintained fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-mycloud). The original integration and the [wdnas-client](https://github.com/J-shw/wdnas_client) library were created by [@J-shw](https://github.com/J-shw); all credit for the protocol work belongs to the upstream project.
+
+> **Security first:** this fork was reviewed before being published. See [SECURITY.md](SECURITY.md) for the threat model, the audit findings and the residual risks. The integration is local-only: it does not contact any cloud service and does not collect telemetry.
 
 ---
 
 ## Features
-- **System Status**: Monitor CPU and memory usage of your My Cloud device.
-- **Device Information**: See key details like serial number, name, and firmware version.
-- **Disk Information**: See key details about disks, including their health status.
-- **Volume Information**: View all volumes size, encryption status and more.
 
----
+- **System status**: CPU and memory usage.
+- **Device information**: serial number, name, model and firmware version.
+- **Disks**: temperature, size, health, sleep, failure and over-temperature state.
+- **Volumes**: size, mounted/unlocked/encrypted state.
+- **Config flow**: connection and credentials are validated before the entry is created.
+- **Re-authentication**: if the NAS invalidates the session or the password changes, Home Assistant asks for the password again.
+- **Options**: configurable polling interval (30 seconds to 24 hours).
+- **Diagnostics**: downloadable diagnostics with the password redacted.
+- **Translations**: English and Italian.
+
+## Requirements
+
+- Home Assistant **2025.8.0** or newer.
+- A WD My Cloud NAS running firmware **OS2 (v2)** or **OS5 (v5)**.
+- An **admin** account on the NAS.
+
+> The admin account can only be active in one place at a time: either the NAS web UI or this integration.
 
 ## Installation
 
-### HACS (Recommended)
-1. Add this repository in HACS.
-2. Search for "WD My Cloud" and install the integration.
-3. Restart Home Assistant.
+### HACS (recommended)
+
+This fork is not in the default HACS store, so add it as a custom repository:
+
+1. Open **HACS → Integrations**.
+2. Open the three-dot menu → **Custom repositories**.
+3. Add `https://github.com/richkmeli/ha-mycloud` with category **Integration**.
+4. Search for **WD My Cloud**, install it and restart Home Assistant.
 
 ### Manual
-1. Copy the `custom_components/mycloud` folder into your Home Assistant `custom_components` directory.
-2. Restart Home Assistant.
 
----
+1. Copy `custom_components/mycloud` into your Home Assistant `custom_components` directory.
+2. Restart Home Assistant.
 
 ## Configuration
 
-> [!IMPORTANT]  
-> The Admin account can only be active in one place at a time (either the NAS Web UI or this integration).
+1. Go to **Settings → Devices & services → Add integration**.
+2. Search for **WD My Cloud**.
+3. Enter:
+   - **Host**: IP address or hostname of the NAS, for example `192.168.1.10`, `wdmycloud.local` or `nas.local:8080`. Do **not** include `http://`, `https://`, a path or credentials.
+   - **Username** and **Password** of an admin account.
+   - **Software version**: `2` for OS2, `5` for OS5.
+4. The integration logs in, reads the device information and creates the entry only if the NAS responds correctly.
 
-1.  Go to **Settings** > **Devices & Services**.
-2.  Click **Add Integration** and search for "**WD My Cloud**".
-3.  Enter your device's **IP address** or **hostname** (e.g., `192.168.1.10` or `wdmycloud`). Do **not** include `http://` or `https://`.
-4.  Enter your username and password (Must be an **admin** account)
-5. Select NAS software version (Currently 2 or 5 are supported)
+The host field is validated: schemes, paths, query strings, fragments and `user:password@host` values are rejected.
 
----
+## Options
 
-## Supported Devices & Contributing
-
-This integration currently supports V2 and V5 firmware. You can see a list of tested models in the client library's documentation:
-
-* **[View Known Supported Models](https://github.com/J-shw/wdnas_client/blob/dev/docs/SUPPORTED_MODELS.md)**
-
-**Want to add your device?**
-
-If your model isn't on the list, or if you have a different firmware version, I'd love to add support for it. Please **[open a GitHub Issue](https://github.com/J-shw/ha-mycloud/issues/new?template=new_device_request.md)** and we can work together to get it added.
-
----
-
-## Example
-<img alt="Screenshot of integration use in Home Assistant" src="https://github.com/user-attachments/assets/0b93e3d9-71ba-4386-93f2-75c210a65656" />
-
----
+Open the integration entry → **Configure** to change the polling interval. The default is 600 seconds; the accepted range is 30–86400 seconds.
 
 ## Entities
 
-This integration provides the following entities. `[disk_name]` and `[volume_name]` will be replaced by the actual names found on your device.
+`[disk_name]` and `[volume_name]` are replaced by the values reported by the NAS.
 
 ### Sensors
-* **CPU Usage**: `sensor.wd_my_cloud_cpu_usage`
-* **Memory Usage**: `sensor.wd_my_cloud_memory_usage`
-* **Total Storage**: `sensor.wd_my_cloud_total_storage`
-* **Used Storage**: `sensor.wd_my_cloud_used_storage`
-* **Unused Storage**: `sensor.wd_my_cloud_unused_storage`
-* **Disk Temperature**: `sensor.wd_my_cloud_disk_[disk_name]_temperature`
-* **Disk Size**: `sensor.wd_my_cloud_disk_[disk_name]_size`
-* **Volume Size**: `sensor.wd_my_cloud_volume_[volume_name]_size`
 
-### Binary Sensors
-* **Disk Healthy**: `binary_sensor.wd_my_cloud_disk_[disk_name]_healthy`
-* **Disk Sleeping**: `binary_sensor.wd_my_cloud_disk_[disk_name]_sleeping`
-* **Disk Failed**: `binary_sensor.wd_my_cloud_disk_[disk_name]_failed`
-* **Disk Over Temperature**: `binary_sensor.wd_my_cloud_disk_[disk_name]_over_temperature`
-* **Volume Mounted**: `binary_sensor.wd_my_cloud_volume_[volume_name]_mounted`
-* **Volume Unlocked**: `binary_sensor.wd_my_cloud_volume_[volume_name]_unlocked`
-* **Volume Encrypted**: `binary_sensor.wd_my_cloud_volume_[volume_name]_encrypted`
+- `sensor.wd_my_cloud_cpu_usage`
+- `sensor.wd_my_cloud_memory_usage`
+- `sensor.wd_my_cloud_total_storage`
+- `sensor.wd_my_cloud_used_storage`
+- `sensor.wd_my_cloud_unused_storage`
+- `sensor.wd_my_cloud_disk_[disk_name]_temperature`
+- `sensor.wd_my_cloud_disk_[disk_name]_size`
+- `sensor.wd_my_cloud_volume_[volume_name]_size`
+
+### Binary sensors
+
+- `binary_sensor.wd_my_cloud_disk_[disk_name]_healthy`
+- `binary_sensor.wd_my_cloud_disk_[disk_name]_sleeping`
+- `binary_sensor.wd_my_cloud_disk_[disk_name]_failed`
+- `binary_sensor.wd_my_cloud_disk_[disk_name]_over_temperature`
+- `binary_sensor.wd_my_cloud_volume_[volume_name]_mounted`
+- `binary_sensor.wd_my_cloud_volume_[volume_name]_unlocked`
+- `binary_sensor.wd_my_cloud_volume_[volume_name]_encrypted`
+
+## Security
+
+- The integration talks **only** to the host you configure. There are no hardcoded endpoints, no cloud calls and no telemetry.
+- The third-party dependency is pinned to the audited release `wdnas-client==0.9.4`.
+- There is no `eval`, `exec`, `subprocess`, shell execution or dynamic import in the integration.
+- The password is not copied into `hass.data`; only the coordinator is stored there.
+- Diagnostics redact the password.
+
+### Known limitation: plain HTTP
+
+The upstream `wdnas-client` library uses `http://` (not HTTPS). Credentials are base64-encoded, which is **encoding, not encryption**, and traffic can be read by someone who can sniff your LAN. This is an upstream limitation that cannot be fixed safely without changing the library.
+
+Use the integration only on a trusted network. Recommended mitigations:
+
+- Put the NAS and Home Assistant on a dedicated VLAN or trusted network.
+- Do not expose the NAS web interface to the internet.
+- Use a unique admin password, not a password reused elsewhere.
+- Keep the NAS firmware updated.
+
+See [SECURITY.md](SECURITY.md) for the full audit.
+
+## Troubleshooting
+
+- **`cannot_connect`**: verify the IP/hostname, that the NAS web UI is reachable from Home Assistant and that the admin account is not already logged in elsewhere.
+- **`invalid_auth`**: use an admin account and verify the password. The integration starts a re-authentication flow when the NAS rejects the stored credentials.
+- **`invalid_host`**: remove `http://`, `https://`, paths, query strings or credentials from the host field.
+- **Entities unavailable after a disk change**: reload the integration so the new disks/volumes are discovered.
+- **Enable debug logging**:
+
+  ```yaml
+  logger:
+    default: warning
+    logs:
+      custom_components.mycloud: debug
+  ```
+
+## Development
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-test.txt
+pytest
+ruff check custom_components tests
+ruff format --check custom_components tests
+```
+
+The test suite covers host validation, config flow errors, setup/unload lifecycle, coordinator re-authentication, entity values and static security checks.
+
+## Supported devices
+
+The client library maintains the list of tested models:
+
+- [Known supported models](https://github.com/J-shw/wdnas_client/blob/dev/docs/SUPPORTED_MODELS.md)
+
+If your model is not listed, open an issue using the **New Device Support Request** template.
+
+## Credits
+
+- [@J-shw](https://github.com/J-shw) for the original [ha-mycloud](https://github.com/J-shw/ha-mycloud) integration and the [wdnas_client](https://github.com/J-shw/wdnas_client) library.
+- All upstream contributors who reverse-engineered and tested the WD NAS API.
+
+## License
+
+The upstream `J-shw/ha-mycloud` repository does not include a license file. This fork preserves that upstream status; no additional license is granted here. If you need a clear redistribution license, ask the upstream author first.

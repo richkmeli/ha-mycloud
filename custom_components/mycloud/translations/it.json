@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WD My Cloud",
+        "description": "Inserisci l'indirizzo del NAS WD My Cloud (ad esempio {host_example}). Non includere http:// o https://.",
+        "data": {
+          "Host": "Host",
+          "Username": "Nome utente",
+          "Password": "Password",
+          "Version": "Versione software"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Riautentica WD My Cloud",
+        "description": "Il NAS ha rifiutato le credenziali salvate. Inserisci di nuovo la password.",
+        "data": {
+          "Password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_host": "Inserisci un hostname o un indirizzo IP senza schema, percorso o credenziali.",
+      "invalid_auth": "Nome utente o password non validi.",
+      "cannot_connect": "Impossibile connettersi al NAS.",
+      "unknown": "Errore imprevisto."
+    },
+    "abort": {
+      "already_configured": "Questo NAS è già configurato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni WD My Cloud",
+        "description": "L'intervallo di aggiornamento deve essere compreso tra {min_interval} e {max_interval} secondi.",
+        "data": {
+          "update_interval": "Intervallo di aggiornamento (secondi)"
+        }
+      }
+    }
+  }
+}
