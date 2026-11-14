@@ -21,7 +21,7 @@
     },
     "error": {
       "invalid_host": "Enter a hostname or IP address without a scheme, path or credentials.",
-      "invalid_auth": "Invalid username or password.",
+      "invalid_auth": "Invalid username or password, or another admin session is already active on the NAS.",
       "cannot_connect": "Unable to connect to the NAS.",
       "unknown": "Unexpected error."
     },

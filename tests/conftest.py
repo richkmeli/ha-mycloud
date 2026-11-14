@@ -54,6 +54,25 @@ def nas_data() -> dict:
             "description": "EX2 Ultra",
         },
         "system_version": {"firmware": "5.31.108"},
+        "alerts": [
+            {
+                "code": "1002",
+                "seq_num": "1",
+                "level": "1",
+                "msg": "Network connection lost",
+                "desc": "The network connection is down.",
+                "time": "Sun, Oct 26, 2025 12:20:06 PM",
+            },
+            {
+                "code": "1022",
+                "seq_num": "2",
+                "level": "1",
+                "msg": "Power supply failure",
+                "desc": "Power supply 1 failed.",
+                "time": "Fri, Nov 13, 2026 11:55:36 AM",
+            },
+        ],
+        "uptime": 90_061,
     }
 
 

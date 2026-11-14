@@ -20,6 +20,8 @@ Include the affected version, a description, reproduction steps and any relevant
 - Every request is built from the host configured by the user. There are no hardcoded URLs or fallback endpoints in the integration or in `wdnas-client==0.9.4`.
 - The host field only accepts a hostname, IPv4/IPv6 address and optional port. Schemes, paths, query strings, fragments and `user:password@host` are rejected before a connection is attempted.
 - Requests have a 30-second timeout so a dead NAS cannot block the Home Assistant event loop forever.
+- The optional alert and uptime endpoints use the same configured host and the same authenticated session. They do not introduce a second network destination. A failure in either endpoint is isolated: only the related sensors become unavailable, while the core sensors keep updating.
+- The V5 uptime fallback (`cgi_get_status`) is a second command on the same NAS status endpoint. It is used only after the dedicated uptime command fails and still applies the same host, session and timeout rules.
 
 ### Credentials and storage
 
@@ -33,7 +35,7 @@ Include the affected version, a description, reproduction steps and any relevant
 
 1. **Plain HTTP.** The upstream `wdnas-client` library hardcodes `http://`. The password is base64-encoded, which is encoding, not encryption. An attacker who can sniff the LAN can recover the credentials. Fixing this requires HTTPS support in the client library (and support in the NAS firmware). Until then, use a trusted VLAN, do not expose the NAS to the internet, use a unique admin password and keep the firmware updated.
 2. **Admin account.** The integration needs an admin account. WD firmware allows the admin account to be active in only one place at a time. A compromised Home Assistant host therefore exposes the NAS admin password. Harden the Home Assistant host and restrict access to its configuration.
-3. **NAS firmware.** The integration trusts the XML/JSON returned by the NAS. A malicious or compromised NAS can return malformed data; the integration validates types and reports unavailable entities instead of crashing, but it cannot protect the NAS from itself.
+3. **NAS firmware.** The integration trusts the XML/JSON returned by the NAS. A malicious or compromised NAS can return malformed data; the integration validates types and reports unavailable entities instead of crashing, but it cannot protect the NAS from itself. Alert messages are treated as opaque text, exposed as a sensor state/attribute and never rendered as HTML or executed.
 4. **Third-party library.** `wdnas-client==0.9.4` is pinned exactly. Its source distribution was audited: it only uses `aiohttp`, has no install hooks, no telemetry, no shell execution and no endpoint other than the configured host.
 
 ## Audit — 2026-11-14
@@ -69,6 +71,7 @@ Findings and resolutions:
 | F-10 | Low | Requests had no explicit timeout. | Fixed: 30-second total timeout. |
 | F-11 | Low | The new-device issue template contained malformed YAML/quoting. | Fixed. |
 | F-12 | Low | GitHub Actions used floating `@main`/`@master` refs. | Fixed: actions pinned to commit SHAs; workflows use least-privilege permissions. |
+| F-13 | Low | A failing alert or uptime endpoint could make every entity unavailable, even though those sensors are optional. | Fixed: both fetches are isolated and return `None` on failure; only the affected sensors become unavailable. |
 
 No backdoor, hidden endpoint, credential exfiltration, obfuscated payload, install hook or unexpected outbound connection was found.
 

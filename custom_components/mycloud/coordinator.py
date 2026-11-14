@@ -96,13 +96,50 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Unexpected error fetching data: {err}") from err
 
     async def _async_fetch(self) -> dict[str, Any]:
-        """Fetch the data set exposed to the entities."""
-        return {
+        """Fetch the data set exposed to the entities.
+
+        Alerts and uptime are optional: a failure in one of those endpoints
+        must not make the whole integration unavailable.
+        """
+        data: dict[str, Any] = {
             "system_info": await self.client.system_info(),
             "system_status": await self.client.system_status(),
             "device_info": await self.client.device_info(),
             "system_version": await self.client.system_version(),
+            "alerts": await self._async_alerts(),
+            "uptime": None,
         }
+
+        if getattr(self.client, "version", None) == 5:
+            data["uptime"] = await self._async_optional(self.client.async_uptime)
+
+        return data
+
+    async def _async_optional(self, fetch):
+        """Call an optional endpoint, returning None instead of failing."""
+        try:
+            return await fetch()
+        except (
+            InvalidLoginError,
+            RequestFailedError,
+            aiohttp.ClientError,
+            TimeoutError,
+            OSError,
+            ValueError,
+        ) as err:
+            _LOGGER.debug("Optional NAS endpoint failed: %s", err)
+            return None
+
+    async def _async_alerts(self) -> list[dict[str, Any]] | None:
+        """Return the alert list, or None when the NAS cannot provide it."""
+        result = await self._async_optional(self.client.alerts)
+        if (
+            isinstance(result, tuple)
+            and len(result) == 2
+            and isinstance(result[1], list)
+        ):
+            return result[1]
+        return None
 
     async def async_close(self) -> None:
         """Close the NAS session."""

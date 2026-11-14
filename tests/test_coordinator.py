@@ -26,10 +26,13 @@ def entry():
 def client(nas_data):
     """Return a mocked NAS client."""
     client = AsyncMock()
+    client.version = 5
     client.system_info.return_value = nas_data["system_info"]
     client.system_status.return_value = nas_data["system_status"]
     client.device_info.return_value = nas_data["device_info"]
     client.system_version.return_value = nas_data["system_version"]
+    client.alerts.return_value = (len(nas_data["alerts"]), nas_data["alerts"])
+    client.async_uptime.return_value = nas_data["uptime"]
     return client
 
 
@@ -48,6 +51,40 @@ async def test_update_fetches_all_endpoints(coordinator, client, nas_data):
     client.system_status.assert_awaited_once()
     client.device_info.assert_awaited_once()
     client.system_version.assert_awaited_once()
+    client.alerts.assert_awaited_once()
+    client.async_uptime.assert_awaited_once()
+
+
+async def test_optional_alerts_failure_keeps_core_data(coordinator, client, nas_data):
+    """A failing alert endpoint only disables the alert sensors."""
+    client.alerts.side_effect = RequestFailedError(500)
+
+    data = await coordinator._async_update_data()
+
+    assert data["alerts"] is None
+    assert data["system_info"] == nas_data["system_info"]
+    assert data["uptime"] == nas_data["uptime"]
+
+
+async def test_optional_uptime_failure_keeps_core_data(coordinator, client, nas_data):
+    """A failing uptime endpoint only disables the uptime sensor."""
+    client.async_uptime.side_effect = RequestFailedError(500)
+
+    data = await coordinator._async_update_data()
+
+    assert data["uptime"] is None
+    assert data["system_info"] == nas_data["system_info"]
+    assert data["alerts"] == nas_data["alerts"]
+
+
+async def test_uptime_not_requested_for_v2(coordinator, client):
+    """The uptime endpoint is V5-only."""
+    client.version = 2
+
+    data = await coordinator._async_update_data()
+
+    assert data["uptime"] is None
+    client.async_uptime.assert_not_awaited()
 
 
 async def test_update_reauthenticates_on_403(coordinator, client, nas_data):

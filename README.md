@@ -1,7 +1,7 @@
 # <img src="images/icon.png" alt="WD My Cloud App Icon" width="100"> ha-mycloud
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=richkmeli&repository=ha-mycloud&category=Integration)
-[![CI](https://github.com/richkmeli/ha-mycloud/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/richkmeli/ha-mycloud/actions/workflows/ci.yml)
+[![CI](https://github.com/richkmeli/ha-mycloud/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/richkmeli/ha-mycloud/actions/workflows/ci.yml)
 [![HACS Action](https://github.com/richkmeli/ha-mycloud/actions/workflows/validate.yml/badge.svg)](https://github.com/richkmeli/ha-mycloud/actions/workflows/validate.yml)
 [![Validate with hassfest](https://github.com/richkmeli/ha-mycloud/actions/workflows/hassfest.yml/badge.svg)](https://github.com/richkmeli/ha-mycloud/actions/workflows/hassfest.yml)
 
@@ -19,6 +19,8 @@ This repository is a maintained fork of [J-shw/ha-mycloud](https://github.com/J-
 - **Device information**: serial number, name, model and firmware version.
 - **Disks**: temperature, size, health, sleep, failure and over-temperature state.
 - **Volumes**: size, mounted/unlocked/encrypted state.
+- **Alerts**: number of entries in the NAS alert log and the latest alert with its code, level, description and time.
+- **Uptime**: NAS uptime on OS 5, including the `cgi_get_status` fallback for firmware that fails the dedicated uptime command.
 - **Config flow**: connection and credentials are validated before the entry is created.
 - **Re-authentication**: if the NAS invalidates the session or the password changes, Home Assistant asks for the password again.
 - **Options**: configurable polling interval (30 seconds to 24 hours).
@@ -76,6 +78,9 @@ Open the integration entry → **Configure** to change the polling interval. The
 - `sensor.wd_my_cloud_total_storage`
 - `sensor.wd_my_cloud_used_storage`
 - `sensor.wd_my_cloud_unused_storage`
+- `sensor.wd_my_cloud_alert_count`
+- `sensor.wd_my_cloud_latest_alert`
+- `sensor.wd_my_cloud_uptime` (OS 5 only)
 - `sensor.wd_my_cloud_disk_[disk_name]_temperature`
 - `sensor.wd_my_cloud_disk_[disk_name]_size`
 - `sensor.wd_my_cloud_volume_[volume_name]_size`
@@ -114,7 +119,7 @@ See [SECURITY.md](SECURITY.md) for the full audit.
 ## Troubleshooting
 
 - **`cannot_connect`**: verify the IP/hostname, that the NAS web UI is reachable from Home Assistant and that the admin account is not already logged in elsewhere.
-- **`invalid_auth`**: use an admin account and verify the password. The integration starts a re-authentication flow when the NAS rejects the stored credentials.
+- **`invalid_auth`**: use an admin account and verify the password. WD firmware allows only one active admin session, so this error can also mean that the NAS web UI is still logged in. Close the web UI session and retry. The integration starts a re-authentication flow when the NAS rejects the stored credentials.
 - **`invalid_host`**: remove `http://`, `https://`, paths, query strings or credentials from the host field.
 - **Entities unavailable after a disk change**: reload the integration so the new disks/volumes are discovered.
 - **Enable debug logging**:
@@ -125,6 +130,22 @@ See [SECURITY.md](SECURITY.md) for the full audit.
     logs:
       custom_components.mycloud: debug
   ```
+
+## Upstream triage (2026-11-14)
+
+This fork is based on `J-shw/ha-mycloud` commit `0314bdc`. The open issues and pull requests were reviewed before porting changes:
+
+| Upstream item | Decision |
+| --- | --- |
+| [#72](https://github.com/J-shw/ha-mycloud/issues/72) aiohttp session leak | Already fixed: the fork owns the client lifecycle, closes the old session before reconnecting and closes the session on unload. |
+| [#79](https://github.com/J-shw/ha-mycloud/pull/79) alert sensors | Ported: **Alert Count** and **Latest Alert** (with code, level, description and time attributes). |
+| [#40](https://github.com/J-shw/ha-mycloud/issues/40) device info and uptime | Uptime ported for OS 5. Device name, model and firmware are already exposed by the Home Assistant device registry. |
+| [#50](https://github.com/J-shw/wdnas_client/pull/50) V5 uptime fallback | Ported in the client wrapper: `cgi_get_status` is used when `cgi_get_uptime` fails. |
+| [#68](https://github.com/J-shw/ha-mycloud/issues/68), [#78](https://github.com/J-shw/ha-mycloud/issues/78) setup/401/DNS failures | The config flow now validates host, connection and credentials and reports separate errors. The `invalid_auth` message also mentions the single-admin-session limitation. DNS and VLAN problems remain environment issues. |
+| [#48](https://github.com/J-shw/ha-mycloud/issues/48) USB storage | Not ported: `wdnas_client` exposes `usb_info()` but there is no validated response schema or hardware test data. |
+| [#75](https://github.com/J-shw/ha-mycloud/issues/75) license | Cannot be added by this fork: the upstream project has no license. HACS custom-repository installation does not require it; see the License section. |
+| [#76](https://github.com/J-shw/ha-mycloud/pull/76), [#77](https://github.com/J-shw/ha-mycloud/issues/77) V4 support and power buttons | Not merged: the PR changes 40 files, depends on the unmerged `wdnas_client#49`, vendors the library and ships shutdown untested. Revisit when upstream releases the client work. |
+| [#55](https://github.com/J-shw/ha-mycloud/issues/55) 403 log spam | Addressed by re-authenticating once on 401/403 instead of logging every poll as a failure. |
 
 ## Development
 
@@ -140,6 +161,8 @@ ruff format --check custom_components tests
 The test suite covers host validation, config flow errors, setup/unload lifecycle, coordinator re-authentication, entity values and static security checks.
 
 ### Repository maintenance
+
+The maintained branch is `main`; releases are cut from `main`. The `dev` branch belongs to the upstream project and is not used for this fork.
 
 The HACS validation workflow ignores the `license`, `topics` and `issues` checks:
 

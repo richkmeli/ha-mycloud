@@ -2,11 +2,36 @@
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN
+
+# The NAS returns alert times in English, for example
+# "Fri, Nov 13, 2026 11:55:36 AM". Parsing them with strptime would depend on
+# the Home Assistant process locale, so use a fixed English table instead.
+_ALERT_TIME_RE = re.compile(
+    r"(?:[A-Za-z]{3},\s*)?([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4})\s+"
+    r"(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)",
+    re.IGNORECASE,
+)
+_ALERT_MONTHS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
 
 
 def coordinator_data(coordinator) -> dict[str, Any]:
@@ -137,3 +162,58 @@ def as_bool(value: Any) -> bool | None:
         return value
     converted = as_int(value)
     return None if converted is None else bool(converted)
+
+
+def parse_alert_time(value: Any) -> datetime | None:
+    """Parse an alert timestamp returned by the NAS, ignoring the locale."""
+    if not isinstance(value, str):
+        return None
+
+    match = _ALERT_TIME_RE.fullmatch(value.strip())
+    if match is None:
+        return None
+
+    month_name, day, year, hour, minute, second, meridiem = match.groups()
+    month = _ALERT_MONTHS.get(month_name.lower())
+    if month is None:
+        return None
+
+    hour_value = int(hour)
+    if meridiem.upper() == "AM" and hour_value == 12:
+        hour_value = 0
+    elif meridiem.upper() == "PM" and hour_value != 12:
+        hour_value += 12
+
+    try:
+        return datetime(
+            int(year),
+            month,
+            int(day),
+            hour_value,
+            int(minute),
+            int(second),
+        )
+    except ValueError:
+        return None
+
+
+def latest_alert(alerts: Any) -> dict[str, Any] | None:
+    """Return the newest alert, falling back to the first valid entry."""
+    if not isinstance(alerts, list) or not alerts:
+        return None
+
+    dated: list[tuple[datetime, dict[str, Any]]] = []
+    for alert in alerts:
+        if not isinstance(alert, dict):
+            continue
+        parsed = parse_alert_time(alert.get("time"))
+        if parsed is not None:
+            dated.append((parsed, alert))
+
+    if dated:
+        return max(dated, key=lambda item: item[0])[1]
+
+    for alert in alerts:
+        if isinstance(alert, dict):
+            return alert
+    return None

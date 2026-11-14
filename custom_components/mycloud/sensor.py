@@ -8,12 +8,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfInformation, UnitOfTemperature
+from homeassistant.const import UnitOfInformation, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import CONF_VERSION, DOMAIN
 from .coordinator import MyCloudCoordinator
 from .entity import (
     as_float,
@@ -24,6 +24,7 @@ from .entity import (
     coordinator_data,
     get_disk,
     get_volume,
+    latest_alert,
 )
 
 
@@ -73,7 +74,14 @@ async def async_setup_entry(
             "Unused Storage",
             "mdi:database-plus",
         ),
+        MyCloudAlertCountSensor(coordinator, device_info, serial_number, device_name),
+        MyCloudLatestAlertSensor(coordinator, device_info, serial_number, device_name),
     ]
+
+    if as_int(config_entry.data.get(CONF_VERSION)) == 5:
+        sensors.append(
+            MyCloudUptimeSensor(coordinator, device_info, serial_number, device_name)
+        )
 
     disks = system_info.get("disks") or []
     if isinstance(disks, list):
@@ -219,6 +227,98 @@ class MyCloudStorageSensor(MyCloudSensorBase):
         system_info = coordinator_data(self.coordinator).get("system_info") or {}
         size = system_info.get("size") or {}
         return as_int(size.get(self._value_key))
+
+
+class MyCloudAlertCountSensor(MyCloudSensorBase):
+    """Number of entries in the NAS alert log."""
+
+    def __init__(self, coordinator, device_info, serial_number, device_name) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_alert_count",
+            f"{device_name} Alert Count",
+            icon="mdi:bell-badge-outline",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True when the alert endpoint responded."""
+        alerts = coordinator_data(self.coordinator).get("alerts")
+        return super().available and isinstance(alerts, list)
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the number of active alerts."""
+        alerts = coordinator_data(self.coordinator).get("alerts")
+        return len(alerts) if isinstance(alerts, list) else None
+
+
+class MyCloudLatestAlertSensor(MyCloudSensorBase):
+    """Newest message in the NAS alert log."""
+
+    _attr_state_class = None
+
+    def __init__(self, coordinator, device_info, serial_number, device_name) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_latest_alert",
+            f"{device_name} Latest Alert",
+            icon="mdi:bell-alert-outline",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True when the alert endpoint responded."""
+        alerts = coordinator_data(self.coordinator).get("alerts")
+        return super().available and isinstance(alerts, list)
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the newest alert message."""
+        alert = latest_alert(coordinator_data(self.coordinator).get("alerts"))
+        if not alert:
+            return None
+        message = alert.get("msg")
+        return str(message) if message else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the alert details as attributes."""
+        alert = latest_alert(coordinator_data(self.coordinator).get("alerts"))
+        if not alert:
+            return {}
+        return {
+            "code": alert.get("code"),
+            "level": alert.get("level"),
+            "description": alert.get("desc"),
+            "time": alert.get("time"),
+        }
+
+
+class MyCloudUptimeSensor(MyCloudSensorBase):
+    """Uptime of the NAS (V5 only)."""
+
+    def __init__(self, coordinator, device_info, serial_number, device_name) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_uptime",
+            f"{device_name} Uptime",
+            unit=UnitOfTime.SECONDS,
+            device_class=SensorDeviceClass.DURATION,
+            icon="mdi:timer-outline",
+            suggested_unit=UnitOfTime.HOURS,
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the uptime in seconds."""
+        return as_int(coordinator_data(self.coordinator).get("uptime"))
 
 
 class MyCloudDiskTemperatureSensor(MyCloudSensorBase):

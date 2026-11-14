@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-11-14
+
+### Added
+
+- **Alert Count** and **Latest Alert** sensors, ported from upstream PR #79 and issue #40. The newest alert is selected by parsing the NAS timestamp independently of the Home Assistant locale; code, level, description and time are exposed as attributes.
+- **Uptime** sensor for OS 5, with the `cgi_get_status` fallback proposed in upstream `wdnas_client#50`.
+- Optional alert and uptime failures no longer make the core sensors unavailable.
+
+### Changed
+
+- The maintained branch is now `main`; CI, CodeQL, documentation and future releases target `main`.
+- The `invalid_auth` message now mentions the WD single-admin-session limitation.
+- Added an upstream issue/PR triage table to the README.
+
+### Fixed
+
+- Alert timestamps are parsed with a fixed English table, so an Italian or other non-English Home Assistant locale cannot break the selection.
+
 ## [1.3.2] - 2026-11-14
 
 ### Fixed

@@ -13,16 +13,30 @@ import re
 
 import aiohttp
 from wdnas_client import client as nas_client
+from wdnas_client.const import SCHEME
+from wdnas_client.exceptions import RequestFailedError
 
 from .const import REQUEST_TIMEOUT
 
 _STATUS_CODE_RE = re.compile(r"Request failed:\s*(\d{3})")
+_UPTIME_RE = re.compile(
+    r"(\d+)\s*days?\s*(\d+)\s*hour[s]?\s*(\d+)\s*minute[s]?", re.IGNORECASE
+)
 
 
 def status_code(err: Exception) -> int | None:
     """Extract the HTTP status code from a wdnas-client exception."""
     match = _STATUS_CODE_RE.search(str(err))
     return int(match.group(1)) if match else None
+
+
+def parse_uptime_text(text: str) -> int | None:
+    """Parse the ``<uptime>`` text returned by the NAS into seconds."""
+    match = _UPTIME_RE.search(text)
+    if match is None:
+        return None
+    days, hours, minutes = (int(part) for part in match.groups())
+    return days * 86400 + hours * 3600 + minutes * 60
 
 
 class MyCloudClient(nas_client):
@@ -47,6 +61,45 @@ class MyCloudClient(nas_client):
         """Close the underlying aiohttp session."""
         async with self._session_lock:
             await self._async_close_locked()
+
+    async def async_uptime(self) -> int | None:
+        """Return the V5 uptime in seconds.
+
+        Some firmware (for example 5.33.103) answers ``cgi_get_uptime`` with an
+        empty HTTP 500 even though the same ``<uptime>`` element is present in
+        ``cgi_get_status``. Try the documented command first and fall back to
+        the status response, as proposed upstream in wdnas_client#50.
+        """
+        if self.version != 5:
+            return None
+
+        try:
+            return await self.uptime()
+        except RequestFailedError:
+            return await self._async_uptime_from_status()
+
+    async def _async_uptime_from_status(self) -> int | None:
+        """Read uptime from ``cgi_get_status`` when the dedicated call fails."""
+        if self.session is None:
+            return None
+
+        url = f"{SCHEME}{self.host}/cgi-bin/status_mgr.cgi"
+        headers = {
+            "Host": self.host,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        }
+
+        try:
+            async with self.session.post(
+                url, data="cmd=cgi_get_status", headers=headers
+            ) as response:
+                if response.status != 200:
+                    return None
+                text = await response.text()
+        except (aiohttp.ClientError, TimeoutError, OSError):
+            return None
+
+        return parse_uptime_text(text)
 
     async def _async_open(self) -> None:
         """Create a fresh session and log in."""
