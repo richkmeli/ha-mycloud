@@ -53,6 +53,12 @@ def coordinator(hass, entry, client):
     return MyCloudCoordinator(hass, entry, client)
 
 
+def test_coordinator_skips_redundant_listener_updates(coordinator):
+    """Identical payloads do not notify every entity on each poll."""
+    assert coordinator.always_update is False
+    assert coordinator.device_id is None
+
+
 async def test_update_fetches_all_endpoints(coordinator, client, nas_data):
     """The coordinator returns the payload consumed by the entities."""
     data = await coordinator._async_update_data()

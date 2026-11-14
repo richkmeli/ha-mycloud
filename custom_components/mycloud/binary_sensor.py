@@ -37,6 +37,7 @@ async def async_setup_entry(
         return
 
     device_info, serial_number, device_name, firmware = build_device_info(coordinator)
+    parent_device_id = coordinator.device_id
     system_info = (coordinator_data(coordinator).get("system_info")) or {}
 
     entities: list[BinarySensorEntity] = []
@@ -47,7 +48,12 @@ async def async_setup_entry(
             if not isinstance(disk, dict):
                 continue
             disk_device, key, _ = build_disk_info(
-                serial_number, device_name, firmware, disk, index
+                serial_number,
+                device_name,
+                firmware,
+                disk,
+                index,
+                parent_device_id=parent_device_id,
             )
             entities.extend(
                 [
@@ -78,7 +84,11 @@ async def async_setup_entry(
             if not isinstance(volume, dict):
                 continue
             volume_device, key, _ = build_volume_info(
-                serial_number, device_name, volume, index
+                serial_number,
+                device_name,
+                volume,
+                index,
+                parent_device_id=parent_device_id,
             )
             entities.extend(
                 [

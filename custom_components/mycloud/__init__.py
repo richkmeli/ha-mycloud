@@ -22,7 +22,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import MyCloudCoordinator
-from .entity import get_disk, get_volume
+from .entity import build_device_info, get_disk, get_volume
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,6 +108,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> b
         raise
 
     await async_migrate_unique_id(hass, entry, coordinator)
+
+    # Create the NAS device before the platforms so disks and volumes can use
+    # its registry ID as via_device_id.
+    device_info, _, _, _ = build_device_info(coordinator)
+    coordinator.device_id = (
+        dr.async_get(hass)
+        .async_get_or_create(config_entry_id=entry.entry_id, **device_info)
+        .id
+    )
     entry.runtime_data = coordinator
 
     try:

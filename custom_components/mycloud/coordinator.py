@@ -45,8 +45,10 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=f"{DOMAIN}_{entry.entry_id}",
             update_interval=timedelta(seconds=update_interval),
             config_entry=entry,
+            always_update=False,
         )
         self.client = client
+        self.device_id: str | None = None
         self._entry = entry
         self._topology: tuple[tuple[str, ...], tuple[str, ...]] | None = None
 

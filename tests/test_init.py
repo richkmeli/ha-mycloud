@@ -45,12 +45,15 @@ async def test_setup_stores_only_coordinator(hass, config_entry):
     coordinator.async_config_entry_first_refresh = AsyncMock()
     coordinator.async_close = AsyncMock()
     coordinator.data = {"device_info": {"serial_number": "NAS-SERIAL"}}
+    registry = MagicMock()
+    registry.async_get_or_create.return_value.id = "nas-device"
 
     with (
         patch(
             "custom_components.mycloud.MyCloudClient", return_value=client
         ) as client_cls,
         patch("custom_components.mycloud.MyCloudCoordinator", return_value=coordinator),
+        patch("custom_components.mycloud.dr.async_get", return_value=registry),
     ):
         result = await async_setup_entry(hass, config_entry)
 
@@ -61,6 +64,18 @@ async def test_setup_stores_only_coordinator(hass, config_entry):
     client.async_connect.assert_awaited_once()
     client_cls.assert_called_once_with("admin", "secret", "nas.local", 5)
     hass.config_entries.async_forward_entry_setups.assert_awaited_once()
+
+    registry.async_get_or_create.assert_called_once_with(
+        config_entry_id=config_entry.entry_id,
+        identifiers={(DOMAIN, "NAS-SERIAL")},
+        name="WD My Cloud",
+        manufacturer="Western Digital",
+        model=None,
+        sw_version=None,
+        serial_number="NAS-SERIAL",
+        configuration_url=None,
+    )
+    assert coordinator.device_id == "nas-device"
 
 
 async def test_setup_invalid_credentials_starts_reauth(hass, config_entry):
@@ -150,10 +165,13 @@ async def test_setup_platform_failure_closes_coordinator(hass, config_entry):
     coordinator.async_close = AsyncMock()
     coordinator.data = {"device_info": {"serial_number": "NAS-SERIAL"}}
     hass.config_entries.async_forward_entry_setups.side_effect = RuntimeError("boom")
+    registry = MagicMock()
+    registry.async_get_or_create.return_value.id = "nas-device"
 
     with (
         patch("custom_components.mycloud.MyCloudClient", return_value=client),
         patch("custom_components.mycloud.MyCloudCoordinator", return_value=coordinator),
+        patch("custom_components.mycloud.dr.async_get", return_value=registry),
     ):
         with pytest.raises(RuntimeError):
             await async_setup_entry(hass, config_entry)

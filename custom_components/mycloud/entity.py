@@ -84,6 +84,8 @@ def build_disk_info(
     firmware: str | None,
     disk: dict[str, Any],
     index: int,
+    *,
+    parent_device_id: str | None,
 ) -> tuple[DeviceInfo, str, str]:
     """Build a disk device and return its key and display name."""
     key = disk_key(disk)
@@ -102,7 +104,7 @@ def build_disk_info(
         model=disk.get("model"),
         sw_version=firmware,
         hw_version=disk.get("rev"),
-        via_device=(DOMAIN, serial_number),
+        via_device_id=parent_device_id,
     )
     if disk_serial := str(disk.get("sn") or "").strip():
         info["serial_number"] = disk_serial
@@ -122,6 +124,8 @@ def build_volume_info(
     device_name: str,
     volume: dict[str, Any],
     index: int,
+    *,
+    parent_device_id: str | None,
 ) -> tuple[DeviceInfo, str, str]:
     """Build a volume device and return its key and display name."""
     key = volume_key(volume)
@@ -133,7 +137,7 @@ def build_volume_info(
         name=name,
         manufacturer="Western Digital",
         model="Storage Volume",
-        via_device=(DOMAIN, serial_number),
+        via_device_id=parent_device_id,
     )
     return info, key, name
 

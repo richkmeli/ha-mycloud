@@ -11,11 +11,13 @@ async def test_diagnostics_redacts_password(coordinator, config_entry):
     """The diagnostics payload never contains the password."""
     config_entry.runtime_data = coordinator
     config_entry.title = "My Cloud"
+    config_entry.options = {"Password": "option-secret"}
     hass = MagicMock()
 
     result = await async_get_config_entry_diagnostics(hass, config_entry)
 
     assert result["entry"]["data"]["Password"] == "**REDACTED**"
+    assert result["entry"]["options"]["Password"] == "**REDACTED**"
     assert "secret" not in str(result)
     assert result["entry"]["data"]["Host"] == "nas.local"
     assert result["entry"]["title"] == "My Cloud"

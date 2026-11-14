@@ -84,6 +84,7 @@ def coordinator(nas_data):
     coordinator = MagicMock()
     coordinator.data = nas_data
     coordinator.config_entry.entry_id = "entry-1"
+    coordinator.device_id = "nas-device"
     return coordinator
 
 

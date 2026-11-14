@@ -25,7 +25,7 @@ This is a community fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-myclo
 
 ## Requirements
 
-- Home Assistant 2025.8.0 or newer.
+- Home Assistant 2026.8.0 or newer. Version 2.0.0 uses `via_device_id` and no longer loads on Home Assistant 2025.8–2026.7; users on those versions must stay on integration 1.5.0.
 - A WD My Cloud NAS running firmware OS2 (v2) or OS5 (v5).
 - An admin account on the NAS.
 - The NAS web interface reachable from Home Assistant.
@@ -98,7 +98,7 @@ Entity IDs depend on the device name. The examples below use `wd_my_cloud`; your
 - Volume unlocked — `binary_sensor.wd_my_cloud_volume_[volume_name]_unlocked`
 - Volume encrypted — `binary_sensor.wd_my_cloud_volume_[volume_name]_encrypted`
 
-`[disk_name]` and `[volume_name]` are replaced by the values reported by the NAS. When disks or volumes are added, removed or replaced, the integration detects the change and reloads itself, so entities for new hardware are created without a manual step. If hardware is removed, its entities become unavailable; they return with their history when the hardware is reconnected. A disk or volume that will not come back can be deleted from its device page, and its entities are removed with it.
+`[disk_name]` and `[volume_name]` are replaced by the values reported by the NAS. Disk and volume devices are linked to the NAS device in the device registry. When disks or volumes are added, removed or replaced, the integration detects the change and reloads itself, so entities for new hardware are created without a manual step. If hardware is removed, its entities become unavailable; they return with their history when the hardware is reconnected. A disk or volume that will not come back can be deleted from its device page, and its entities are removed with it.
 
 Entity names use the Home Assistant entity-naming convention and are translated into English and Italian; existing entity IDs are preserved. CPU, memory, uptime, alert, disk sleep, removable and volume encryption/unlock entities are marked as diagnostic. The alert sensors are optional: if the NAS does not expose the alert log, only those two entities become unavailable. The uptime sensor is created on OS5 only.
 

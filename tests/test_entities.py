@@ -89,6 +89,15 @@ async def test_sensor_setup_creates_system_disk_and_volume_entities(
         by_class["MyCloudDiskTemperatureSensor"].device_info["serial_number"]
         == "WD-DISK-SN"
     )
+    assert (
+        by_class["MyCloudDiskTemperatureSensor"].device_info["via_device_id"]
+        == "nas-device"
+    )
+    assert (
+        by_class["MyCloudVolumeSizeSensor"].device_info["via_device_id"] == "nas-device"
+    )
+    assert "via_device" not in by_class["MyCloudDiskTemperatureSensor"].device_info
+    assert "via_device" not in by_class["MyCloudVolumeSizeSensor"].device_info
 
     unique_ids = {entity.unique_id for entity in entities}
     assert "NAS-SERIAL_cpu_usage" in unique_ids
@@ -125,12 +134,22 @@ async def test_v2_does_not_create_uptime_sensor(coordinator, config_entry):
 def test_disk_device_name_does_not_duplicate_disk_prefix():
     """A disk already named "Disk 1" does not become "Disk Disk 1"."""
     _, _, name = build_disk_info(
-        "NAS-SERIAL", "NAS", None, {"id": "disk-1", "name": "Disk 1"}, 0
+        "NAS-SERIAL",
+        "NAS",
+        None,
+        {"id": "disk-1", "name": "Disk 1"},
+        0,
+        parent_device_id="nas-device",
     )
     assert name == "NAS Disk 1"
 
     _, _, name = build_disk_info(
-        "NAS-SERIAL", "NAS", None, {"id": "bay-1", "name": "Bay 1"}, 0
+        "NAS-SERIAL",
+        "NAS",
+        None,
+        {"id": "bay-1", "name": "Bay 1"},
+        0,
+        parent_device_id="nas-device",
     )
     assert name == "NAS Disk Bay 1"
 
@@ -320,26 +339,47 @@ async def test_platform_setup_without_coordinator_does_nothing(config_entry):
 def test_disk_device_name_falls_back_when_label_is_blank():
     """A disk without a name, id or serial still gets a readable label."""
     info, key, name = build_disk_info(
-        "NAS-SERIAL", "NAS", None, {"name": "   ", "id": ""}, 2
+        "NAS-SERIAL",
+        "NAS",
+        None,
+        {"name": "   ", "id": ""},
+        2,
+        parent_device_id="nas-device",
     )
     assert key == "disk"
     assert name == "NAS Disk 3"
     assert info["identifiers"] == {(DOMAIN, "NAS-SERIAL:disk:disk")}
+    assert info["via_device_id"] == "nas-device"
+    assert "via_device" not in info
 
 
 def test_volume_device_name_and_fallback():
     """Volumes use the label first, then the name, then the index."""
-    _, key, name = build_volume_info(
-        "NAS-SERIAL", "NAS", {"id": "v1", "label": "Data"}, 0
+    info, key, name = build_volume_info(
+        "NAS-SERIAL",
+        "NAS",
+        {"id": "v1", "label": "Data"},
+        0,
+        parent_device_id="nas-device",
     )
     assert key == "v1"
     assert name == "NAS Data"
+    assert info["via_device_id"] == "nas-device"
+    assert "via_device" not in info
 
-    _, key, name = build_volume_info("NAS-SERIAL", "NAS", {"name": "Backup"}, 0)
+    _, key, name = build_volume_info(
+        "NAS-SERIAL",
+        "NAS",
+        {"name": "Backup"},
+        0,
+        parent_device_id="nas-device",
+    )
     assert key == "Backup"
     assert name == "NAS Backup"
 
-    _, key, name = build_volume_info("NAS-SERIAL", "NAS", {}, 1)
+    _, key, name = build_volume_info(
+        "NAS-SERIAL", "NAS", {}, 1, parent_device_id="nas-device"
+    )
     assert key == "volume"
     assert name == "NAS Volume 2"
 
