@@ -146,6 +146,45 @@ async def test_close_locked_skips_already_closed_sessions():
     assert client.session is None
 
 
+async def test_close_releases_the_admin_session_before_closing():
+    """Closing an authenticated client logs out on the NAS first."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = _LogoutSession(_FakeResponse(204, ""))
+    client.session = session
+    client.phpsessid = "session-id"
+
+    await client._async_close_locked()
+
+    assert session.calls == [
+        (
+            "http://nas.local/nas/v1/auth",
+            {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Host": "nas.local",
+            },
+        )
+    ]
+    assert session.closed
+    assert client.session is None
+    assert client.phpsessid is None
+
+
+async def test_close_swallows_logout_failures():
+    """An unreachable NAS still allows the local session to be released."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = _LogoutSession(error=aiohttp.ClientError("offline"))
+    client.session = session
+    client.phpsessid = "session-id"
+
+    await client._async_close_locked()
+
+    assert len(session.calls) == 1
+    assert session.closed
+    assert client.session is None
+    assert client.phpsessid is None
+
+
 async def test_client_context_manager_opens_and_closes():
     """The async context manager exposes the client and closes it."""
     client = MyCloudClient("admin", "secret", "nas.local")
@@ -238,6 +277,25 @@ async def test_uptime_from_status_handles_transport_errors():
     client.session = session
 
     assert await client._async_uptime_from_status() is None
+
+
+class _LogoutSession:
+    """Session that records the server-side logout request."""
+
+    def __init__(self, response=None, error: Exception | None = None) -> None:
+        self.response = response
+        self.error = error
+        self.calls: list[tuple[str, dict]] = []
+        self.closed = False
+
+    def delete(self, url, headers=None):
+        self.calls.append((url, headers))
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 class _RecordingSession:

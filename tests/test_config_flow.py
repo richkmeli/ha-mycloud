@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import AbortFlow
 
 from custom_components.mycloud.config_flow import (
@@ -237,6 +238,46 @@ async def test_reauth_confirm_updates_password(reauth_flow):
     client.async_close.assert_awaited_once()
 
 
+async def test_reauth_unloads_the_entry_before_login(reauth_flow):
+    """Reauth also releases the old admin session before logging in."""
+    entry = reauth_flow.hass.config_entries.async_get_known_entry.return_value
+    mark_entry_loaded(reauth_flow, entry)
+    client = AsyncMock()
+
+    async def connect() -> None:
+        assert entry.state is ConfigEntryState.NOT_LOADED
+
+    client.async_connect.side_effect = connect
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ):
+        result = await reauth_flow.async_step_reauth_confirm({"Password": "new-secret"})
+
+    assert result["type"] == "abort"
+    reauth_flow.hass.config_entries.async_unload.assert_awaited_once_with("entry-1")
+    reauth_flow.hass.config_entries.async_schedule_reload.assert_not_called()
+
+
+async def test_reauth_restores_the_entry_when_login_fails(reauth_flow):
+    """A failed reauth reloads the entry that was temporarily unloaded."""
+    entry = reauth_flow.hass.config_entries.async_get_known_entry.return_value
+    mark_entry_loaded(reauth_flow, entry)
+    client = AsyncMock()
+    client.async_connect.side_effect = InvalidLoginError("bad")
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ):
+        result = await reauth_flow.async_step_reauth_confirm({"Password": "wrong"})
+
+    assert result["type"] == "form"
+    assert result["errors"]["base"] == "invalid_auth"
+    reauth_flow.hass.config_entries.async_schedule_reload.assert_called_once_with(
+        "entry-1"
+    )
+
+
 @pytest.mark.parametrize(
     ("exception", "expected"),
     [
@@ -289,6 +330,88 @@ def reconfigure_flow(reconfigure_entry):
         return_value={"type": "abort", "reason": "reconfigure_successful"}
     )
     return flow
+
+
+def mark_entry_loaded(flow, entry) -> None:
+    """Make a mocked entry report LOADED and change state on unload."""
+    entry.state = ConfigEntryState.LOADED
+
+    async def unload(_entry_id: str) -> bool:
+        entry.state = ConfigEntryState.NOT_LOADED
+        return True
+
+    flow.hass.config_entries.async_unload = AsyncMock(side_effect=unload)
+
+
+async def test_reconfigure_unloads_the_entry_before_login(reconfigure_flow):
+    """The old admin session is released before validating new credentials."""
+    entry = reconfigure_flow.hass.config_entries.async_get_known_entry.return_value
+    mark_entry_loaded(reconfigure_flow, entry)
+    client = AsyncMock()
+    client.device_info.return_value = {
+        "name": "My Cloud",
+        "serial_number": "NAS-SERIAL",
+    }
+    client.system_info.return_value = {}
+
+    async def connect() -> None:
+        assert entry.state is ConfigEntryState.NOT_LOADED
+
+    client.async_connect.side_effect = connect
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ):
+        result = await reconfigure_flow.async_step_reconfigure(USER_INPUT)
+
+    assert result["type"] == "abort"
+    reconfigure_flow.hass.config_entries.async_unload.assert_awaited_once_with(
+        "entry-1"
+    )
+    reconfigure_flow.hass.config_entries.async_schedule_reload.assert_not_called()
+
+
+async def test_reconfigure_restores_the_entry_when_login_fails(reconfigure_flow):
+    """A failed validation reloads the entry that was temporarily unloaded."""
+    entry = reconfigure_flow.hass.config_entries.async_get_known_entry.return_value
+    mark_entry_loaded(reconfigure_flow, entry)
+    client = AsyncMock()
+    client.async_connect.side_effect = InvalidLoginError("bad")
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ):
+        result = await reconfigure_flow.async_step_reconfigure(USER_INPUT)
+
+    assert result["type"] == "form"
+    assert result["errors"]["base"] == "invalid_auth"
+    reconfigure_flow.hass.config_entries.async_schedule_reload.assert_called_once_with(
+        "entry-1"
+    )
+
+
+async def test_reconfigure_restores_the_entry_on_wrong_device(reconfigure_flow):
+    """An aborted device check also brings the previous entry back."""
+    entry = reconfigure_flow.hass.config_entries.async_get_known_entry.return_value
+    mark_entry_loaded(reconfigure_flow, entry)
+    client = AsyncMock()
+    client.device_info.return_value = {"serial_number": "OTHER-SERIAL"}
+    client.system_info.return_value = {}
+    reconfigure_flow._abort_if_unique_id_mismatch.side_effect = AbortFlow(
+        "wrong_device"
+    )
+
+    with (
+        patch(
+            "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+        ),
+        pytest.raises(AbortFlow),
+    ):
+        await reconfigure_flow.async_step_reconfigure(USER_INPUT)
+
+    reconfigure_flow.hass.config_entries.async_schedule_reload.assert_called_once_with(
+        "entry-1"
+    )
 
 
 async def test_reconfigure_same_device_updates_host(reconfigure_flow):

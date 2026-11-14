@@ -11,6 +11,7 @@ and the known HTTP limitation of the WD API.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from xml.etree.ElementTree import ParseError, fromstring
 
@@ -25,7 +26,10 @@ from .wdnas import (
     parse_uptime_text,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 _STATUS_CODE_RE = re.compile(r"Request failed:\s*(\d{3})")
+_LOGOUT_TIMEOUT = 5
 
 _POWER_COMMANDS = {"restart": "cgi_restart", "shutdown": "cgi_shutdown"}
 _POWER_SAFETY_COMMAND = "cmd=cgi_Detect_Dangerous"
@@ -165,10 +169,28 @@ class MyCloudClient(WDNASClient):
             raise
 
     async def _async_close_locked(self) -> None:
-        """Close the session without acquiring the lock."""
-        if self.session is not None and not self.session.closed:
-            await self.session.close()
-        self.session = None
+        """Log out and close the session without acquiring the lock.
+
+        Releasing the server-side admin session matters on OS5: the firmware
+        accepts one admin session at a time, so reconfigure and reauth must be
+        able to log in while the old entry is being unloaded. Logout is best
+        effort; a powered-off or unreachable NAS must not block the unload.
+        """
+        session = self.session
+        if session is None:
+            return
+        try:
+            if self.phpsessid is not None and not session.closed:
+                try:
+                    async with asyncio.timeout(_LOGOUT_TIMEOUT):
+                        await self.logout()
+                except Exception as err:  # noqa: BLE001 - cleanup is best effort
+                    _LOGGER.debug("NAS logout failed: %s", err)
+        finally:
+            self.session = None
+            self.phpsessid = None
+            if not session.closed:
+                await session.close()
 
     async def __aenter__(self) -> MyCloudClient:
         """Enter the async context manager."""

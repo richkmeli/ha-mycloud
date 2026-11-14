@@ -256,6 +256,9 @@ class _FakeSession:
     def post(self, url, **kwargs):
         return self._request("POST", url, **kwargs)
 
+    def delete(self, url, **kwargs):
+        return self._request("DELETE", url, **kwargs)
+
 
 @pytest.fixture
 def client() -> WDNASClient:
@@ -286,6 +289,7 @@ def test_endpoints_cover_every_used_os5_operation():
     assert SCHEME == "http://"
     assert set(ENDPOINTS) == {
         "login",
+        "logout",
         "system_info",
         "share_names",
         "system_status",
@@ -361,6 +365,43 @@ async def test_login_requires_an_open_session(client):
     client.session = _FakeSession(closed=True)
     with pytest.raises(ValueError):
         await client.login()
+
+
+async def test_logout_deletes_the_server_session(client):
+    """Logout releases the OS5 admin session and clears the PHP session id."""
+    client.phpsessid = "session-id"
+    client.session = _FakeSession(_FakeResponse(204))
+
+    await client.logout()
+
+    method, url, kwargs = client.session.calls[0]
+    assert method == "DELETE"
+    assert url == "http://nas.local:8080/nas/v1/auth"
+    assert kwargs["headers"] == {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Host": "nas.local:8080",
+    }
+    assert client.phpsessid is None
+
+
+async def test_logout_reports_http_errors(client):
+    """A rejected logout is reported and keeps the stored session id."""
+    client.phpsessid = "session-id"
+    client.session = _FakeSession(_FakeResponse(403))
+
+    with pytest.raises(RequestFailedError) as err:
+        await client.logout()
+
+    assert err.value.status_code == 403
+    assert client.phpsessid == "session-id"
+
+
+async def test_logout_requires_an_open_session(client):
+    """Logout cannot create a session or log in on its own."""
+    client.session = None
+    with pytest.raises(ValueError):
+        await client.logout()
 
 
 async def test_get_text_reports_http_errors(client):

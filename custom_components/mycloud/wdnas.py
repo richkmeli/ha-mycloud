@@ -25,6 +25,7 @@ SCHEME = "http://"
 
 ENDPOINTS = {
     "login": "/nas/v1/auth",
+    "logout": "/nas/v1/auth",
     "system_info": "/xml/sysinfo.xml",
     "share_names": "/web/get_share_name_list.php",
     "system_status": "/cgi-bin/status_mgr.cgi",
@@ -174,6 +175,27 @@ class WDNASClient:
                     "Invalid Username/Password or missing session cookie"
                 )
             self.phpsessid = cookies["PHPSESSID"].value
+
+    async def logout(self) -> None:
+        """End the NAS admin session without closing the local session.
+
+        OS5 firmware allows only one admin session at a time. The WD web
+        interface releases it with ``DELETE /nas/v1/auth``; calling this before
+        a new login lets the integration reconfigure or re-authenticate
+        without waiting for the old session to expire.
+        """
+        session = self._require_session()
+        async with session.delete(
+            self._url("logout"),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Host": self.host,
+            },
+        ) as response:
+            if not 200 <= response.status < 300:
+                raise RequestFailedError(response.status)
+        self.phpsessid = None
 
     async def system_info(self) -> dict[str, Any]:
         """Return disks, volumes and the total storage size."""

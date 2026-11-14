@@ -19,6 +19,8 @@ Local changes:
   `client.py`: a bounded aiohttp session, serialized reconnects, the uptime
   fallback and guarded restart/shutdown actions.
 - Split the protocol layer from the integration wrapper and added tests.
+- Added the OS5 server-side logout (`DELETE /nas/v1/auth`), so unload,
+  reconfigure and re-authentication release the NAS admin session.
 - Hardened login by requiring the `PHPSESSID` cookie, fixed group parsing in
   the account response and made missing optional numeric fields default to
   zero instead of raising during parsing.

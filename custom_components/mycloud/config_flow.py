@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     TextSelector,
@@ -103,6 +104,24 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Return the options flow handler."""
         return MyCloudOptionsFlow()
 
+    async def _async_release_admin_session(
+        self, entry: config_entries.ConfigEntry
+    ) -> bool:
+        """Unload a loaded entry so the NAS accepts a new admin session.
+
+        OS5 firmware allows one admin session at a time. The coordinator keeps
+        the entry's session open, so validating new credentials while the
+        entry is loaded fails with ``invalid_auth`` on the second login.
+        """
+        if entry.state is not ConfigEntryState.LOADED:
+            return False
+        return await self.hass.config_entries.async_unload(entry.entry_id)
+
+    def _async_restore_entry(self, entry: config_entries.ConfigEntry) -> None:
+        """Reload an entry that was unloaded only for validation."""
+        if entry.state is not ConfigEntryState.LOADED:
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -190,37 +209,45 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             entry = self._get_reauth_entry()
-            client = MyCloudClient(
-                entry.data[CONF_USERNAME],
-                user_input[CONF_PASSWORD],
-                entry.data[CONF_HOST],
-            )
+            released = await self._async_release_admin_session(entry)
+            reload_requested = False
             try:
-                await client.async_connect()
-            except InvalidLoginError:
-                errors["base"] = "invalid_auth"
-            except RequestFailedError as err:
-                errors["base"] = (
-                    "invalid_auth"
-                    if status_code(err) in (401, 403)
-                    else "cannot_connect"
+                client = MyCloudClient(
+                    entry.data[CONF_USERNAME],
+                    user_input[CONF_PASSWORD],
+                    entry.data[CONF_HOST],
                 )
-            except (TimeoutError, aiohttp.ClientError, OSError):
-                errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error during re-authentication")
-                errors["base"] = "unknown"
-            finally:
-                await client.async_close()
+                try:
+                    await client.async_connect()
+                except InvalidLoginError:
+                    errors["base"] = "invalid_auth"
+                except RequestFailedError as err:
+                    errors["base"] = (
+                        "invalid_auth"
+                        if status_code(err) in (401, 403)
+                        else "cannot_connect"
+                    )
+                except (TimeoutError, aiohttp.ClientError, OSError):
+                    errors["base"] = "cannot_connect"
+                except Exception:
+                    _LOGGER.exception("Unexpected error during re-authentication")
+                    errors["base"] = "unknown"
+                finally:
+                    await client.async_close()
 
-            if not errors:
-                data = {
-                    key: value
-                    for key, value in entry.data.items()
-                    if key != CONF_VERSION
-                }
-                data[CONF_PASSWORD] = user_input[CONF_PASSWORD]
-                return self.async_update_reload_and_abort(entry, data=data)
+                if not errors:
+                    data = {
+                        key: value
+                        for key, value in entry.data.items()
+                        if key != CONF_VERSION
+                    }
+                    data[CONF_PASSWORD] = user_input[CONF_PASSWORD]
+                    result = self.async_update_reload_and_abort(entry, data=data)
+                    reload_requested = True
+                    return result
+            finally:
+                if released and not reload_requested:
+                    self._async_restore_entry(entry)
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -247,69 +274,80 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except ValueError:
                 errors["base"] = "invalid_host"
             else:
-                client = MyCloudClient(
-                    user_input[CONF_USERNAME],
-                    user_input[CONF_PASSWORD],
-                    host,
-                )
-                title = host
-                serial = ""
+                released = await self._async_release_admin_session(entry)
+                reload_requested = False
                 try:
-                    await client.async_connect()
-                    device = await client.device_info()
-                    await client.system_info()
-                    title = str(device.get("name") or host).strip() or host
-                    serial = str(device.get("serial_number") or "").strip()
-                except InvalidLoginError:
-                    errors["base"] = "invalid_auth"
-                except RequestFailedError as err:
-                    errors["base"] = (
-                        "invalid_auth"
-                        if status_code(err) in (401, 403)
-                        else "cannot_connect"
+                    client = MyCloudClient(
+                        user_input[CONF_USERNAME],
+                        user_input[CONF_PASSWORD],
+                        host,
                     )
-                except (TimeoutError, aiohttp.ClientError, OSError):
-                    errors["base"] = "cannot_connect"
-                except Exception:
-                    _LOGGER.exception("Unexpected error validating the NAS")
-                    errors["base"] = "unknown"
-                finally:
-                    await client.async_close()
+                    title = host
+                    serial = ""
+                    try:
+                        await client.async_connect()
+                        device = await client.device_info()
+                        await client.system_info()
+                        title = str(device.get("name") or host).strip() or host
+                        serial = str(device.get("serial_number") or "").strip()
+                    except InvalidLoginError:
+                        errors["base"] = "invalid_auth"
+                    except RequestFailedError as err:
+                        errors["base"] = (
+                            "invalid_auth"
+                            if status_code(err) in (401, 403)
+                            else "cannot_connect"
+                        )
+                    except (TimeoutError, aiohttp.ClientError, OSError):
+                        errors["base"] = "cannot_connect"
+                    except Exception:
+                        _LOGGER.exception("Unexpected error validating the NAS")
+                        errors["base"] = "unknown"
+                    finally:
+                        await client.async_close()
 
-                if not errors:
-                    stored_serial = str(entry.data.get(CONF_SERIAL) or "").strip()
-                    legacy_unique_id = entry.unique_id == entry.data.get(CONF_HOST)
-                    if serial:
-                        if stored_serial:
-                            if serial != stored_serial:
+                    if not errors:
+                        stored_serial = str(entry.data.get(CONF_SERIAL) or "").strip()
+                        legacy_unique_id = entry.unique_id == entry.data.get(CONF_HOST)
+                        if serial:
+                            if stored_serial:
+                                if serial != stored_serial:
+                                    await self.async_set_unique_id(serial)
+                                    self._abort_if_unique_id_mismatch(
+                                        reason="wrong_device"
+                                    )
+                            elif legacy_unique_id:
+                                # Entries created before 1.5.0 use the host as
+                                # unique ID. Migrate them once, after checking for
+                                # duplicates.
+                                await self.async_set_unique_id(serial)
+                                self._abort_if_unique_id_configured()
+                            else:
                                 await self.async_set_unique_id(serial)
                                 self._abort_if_unique_id_mismatch(reason="wrong_device")
-                        elif legacy_unique_id:
-                            # Entries created before 1.5.0 use the host as unique
-                            # ID. Migrate them once, after checking for duplicates.
-                            await self.async_set_unique_id(serial)
-                            self._abort_if_unique_id_configured()
-                        else:
-                            await self.async_set_unique_id(serial)
-                            self._abort_if_unique_id_mismatch(reason="wrong_device")
 
-                    data = {
-                        key: value
-                        for key, value in {
-                            **entry.data,
-                            **user_input,
-                            CONF_HOST: host,
-                        }.items()
-                        if key != CONF_VERSION
-                    }
-                    if serial:
-                        data[CONF_SERIAL] = serial
-                    return self.async_update_reload_and_abort(
-                        entry,
-                        unique_id=serial or entry.unique_id,
-                        title=title,
-                        data=data,
-                    )
+                        data = {
+                            key: value
+                            for key, value in {
+                                **entry.data,
+                                **user_input,
+                                CONF_HOST: host,
+                            }.items()
+                            if key != CONF_VERSION
+                        }
+                        if serial:
+                            data[CONF_SERIAL] = serial
+                        result = self.async_update_reload_and_abort(
+                            entry,
+                            unique_id=serial or entry.unique_id,
+                            title=title,
+                            data=data,
+                        )
+                        reload_requested = True
+                        return result
+                finally:
+                    if released and not reload_requested:
+                        self._async_restore_entry(entry)
 
         return self.async_show_form(
             step_id="reconfigure",
