@@ -1,6 +1,7 @@
 {
   "domain": "mycloud",
   "name": "WD My Cloud",
+  "categories": ["computers_network.nas_servers"],
   "codeowners": ["@richkmeli"],
   "config_flow": true,
   "documentation": "https://github.com/richkmeli/ha-mycloud",
@@ -8,5 +9,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/richkmeli/ha-mycloud/issues",
   "requirements": ["wdnas-client==0.9.4"],
-  "version": "1.3.0"
+  "version": "1.3.1"
 }

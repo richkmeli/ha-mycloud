@@ -139,6 +139,15 @@ ruff format --check custom_components tests
 
 The test suite covers host validation, config flow errors, setup/unload lifecycle, coordinator re-authentication, entity values and static security checks.
 
+### Repository maintenance
+
+The HACS validation workflow ignores the `license`, `topics` and `issues` checks:
+
+- The upstream project does not include a license, so this fork cannot grant one (see the License section).
+- Topics and issues are GitHub repository settings, not files. To improve discoverability, enable **Issues** and add the topics `home-assistant`, `hacs`, `nas`, `wd-my-cloud`, `integration` in the repository settings.
+
+Manifest, `hacs.json`, brand and integration checks remain enforced.
+
 ## Supported devices
 
 The client library maintains the list of tested models:

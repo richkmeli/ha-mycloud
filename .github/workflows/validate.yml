@@ -21,7 +21,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # This fork is distributed as a custom HACS repository, not through the
+      # default store. The upstream project has no license, so the fork cannot
+      # grant one; topics and issues are GitHub settings owned by the account.
+      # Those three checks therefore do not apply, while manifest, hacs.json,
+      # brands and integration checks remain enforced.
       - name: HACS validation
         uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main, 2026-11-14
         with:
           category: integration
+          ignore: license,topics,issues
