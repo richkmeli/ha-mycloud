@@ -17,7 +17,7 @@ Include the affected version, a description, reproduction steps and any relevant
 ### Network behaviour
 
 - The integration is **local polling only**. It never contacts a Western Digital cloud service, analytics endpoint or any other third party.
-- Every request is built from the host configured by the user. The API paths are fixed by the NAS protocol, but there are no hardcoded hosts, cloud endpoints or fallback destinations in the integration or in `wdnas-client==0.9.4`.
+- Every request is built from the host configured by the user. The API paths are fixed by the NAS protocol, but there are no hardcoded hosts, cloud endpoints or fallback destinations in the integration or in the vendored OS5 client (`custom_components/mycloud/wdnas.py`).
 - The host field only accepts a hostname, IPv4/IPv6 address and optional port. Schemes, paths, query strings, fragments and `user:password@host` are rejected before a connection is attempted.
 - Requests have a 30-second timeout so a dead NAS cannot block the Home Assistant event loop forever.
 - The optional firmware, alert, uptime, share, network, account, cloud-access and USB endpoints use the same configured host and the same authenticated session. They do not introduce a second network destination. Each endpoint is isolated: a failure in one only makes its related entities unavailable, while the core sensors keep updating.
@@ -35,17 +35,17 @@ Include the affected version, a description, reproduction steps and any relevant
 
 ### Known protocols and residual risk
 
-1. **Plain HTTP.** The upstream `wdnas-client` library hardcodes `http://`. The password is base64-encoded, which is encoding, not encryption. An attacker who can sniff the LAN can recover the credentials. Fixing this requires HTTPS support in the client library (and support in the NAS firmware). Until then, use a trusted VLAN, do not expose the NAS to the internet, use a unique admin password and keep the firmware updated.
+1. **Plain HTTP.** The vendored OS5 client uses the `http://` scheme because the WD firmware exposes a plain HTTP API. The password is base64-encoded, which is encoding, not encryption. An attacker who can sniff the LAN can recover the credentials. Fixing this requires HTTPS support in the client and in the NAS firmware. Until then, use a trusted VLAN, do not expose the NAS to the internet, use a unique admin password and keep the firmware updated.
 2. **Admin account.** The integration needs an admin account. WD firmware allows the admin account to be active in only one place at a time. A compromised Home Assistant host therefore exposes the NAS admin password. Harden the Home Assistant host and restrict access to its configuration.
 3. **NAS firmware.** The integration trusts the XML/JSON returned by the NAS. A malicious or compromised NAS can return malformed data; the integration validates types and reports unavailable entities instead of crashing, but it cannot protect the NAS from itself. Alert messages, account details, cloud-access data and USB payloads are treated as opaque data, exposed only as sensor states/attributes and never rendered as HTML or executed. The account, cloud-access and USB sensors are disabled by default.
-4. **Third-party library.** `wdnas-client==0.9.4` is pinned exactly. Its source distribution was audited: it only uses `aiohttp`, has no install hooks, no telemetry, no shell execution and no endpoint other than the configured host.
+4. **Vendored client.** The OS5 protocol client is vendored from `wdnas-client` 0.9.4 (MIT License) and has no external runtime dependency. The source distribution was audited before vendoring: it only uses `aiohttp`, has no install hooks, no telemetry, no shell execution and no endpoint other than the configured host. The upstream copyright and license are preserved in `custom_components/mycloud/THIRD_PARTY_NOTICES.md`; local changes are listed in that file and in `UPSTREAM.md`.
 
 ## Audit — 2026-11-14
 
 Scope:
 
 - `custom_components/mycloud/*` (all Python, JSON and translation files)
-- `wdnas-client==0.9.4` source distribution from PyPI
+- Vendored `wdnas-client` 0.9.4 source (`custom_components/mycloud/wdnas.py`)
 - Git history of the fork and upstream repository
 - GitHub Actions workflows and issue templates
 
@@ -61,12 +61,12 @@ Findings and resolutions:
 
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
-| F-01 | High (accepted upstream risk) | `wdnas-client` sends credentials over plain HTTP. | Documented; mitigations in README. Requires an upstream/client change for true TLS. |
+| F-01 | High (accepted risk) | The NAS API and the vendored client send credentials over plain HTTP. | Documented; mitigations in README. Requires HTTPS support in the NAS firmware and the client for true TLS. |
 | F-02 | Medium | The setup copied the plaintext password into `hass.data`. | Fixed: only the coordinator is stored, now in `entry.runtime_data`. |
 | F-03 | Medium | The host field accepted arbitrary strings, including schemes and paths. | Fixed: strict validation and normalization. |
 | F-04 | Medium | The password field was a plain text input. | Fixed: password selector. |
 | F-05 | Medium | The config flow stored credentials without validating the connection or the device endpoints. | Fixed: login, `device_info` and `system_info` are checked before creating the entry. |
-| F-06 | Medium | `wdnas-client>=0.9.4` was unpinned (supply-chain drift). | Fixed: exact pin `==0.9.4`. |
+| F-06 | Medium | `wdnas-client>=0.9.4` was unpinned (supply-chain drift). | Fixed: the reviewed client is vendored and the runtime dependency was removed. |
 | F-07 | Low | The aiohttp session could leak on setup failure/unload; the platform unload function was dead code. | Fixed: session ownership moved to `client.py` and `__init__.py`. |
 | F-08 | Low | Volume unique IDs were based on the volume label and could collide between NAS devices. | Fixed: device serial + volume ID. |
 | F-09 | Low | Binary sensors were registered from the `sensor` platform. | Fixed: separate `binary_sensor` platform. |

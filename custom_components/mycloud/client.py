@@ -1,9 +1,11 @@
-"""Async client wrapper for the WD NAS API.
+"""Client for the WD My Cloud OS5 API.
 
-The integration uses the MIT-licensed ``wdnas-client`` library, pinned in the
-manifest.  This wrapper only adds lifecycle and timeout handling; it does not
-send data anywhere except to the host configured by the user.  See SECURITY.md
-for the threat model and the known HTTP limitation of the upstream library.
+The protocol implementation is vendored in :mod:`custom_components.mycloud.wdnas`
+and is based on the MIT-licensed ``wdnas-client`` library.  This wrapper adds
+the Home Assistant lifecycle: a bounded aiohttp session, serialized session
+handling, the uptime fallback and the guarded power actions.  It only sends
+data to the host configured by the user.  See SECURITY.md for the threat model
+and the known HTTP limitation of the WD API.
 """
 
 from __future__ import annotations
@@ -13,16 +15,17 @@ import re
 from xml.etree.ElementTree import ParseError, fromstring
 
 import aiohttp
-from wdnas_client import client as nas_client
-from wdnas_client.const import SCHEME
-from wdnas_client.exceptions import RequestFailedError
 
 from .const import REQUEST_TIMEOUT
+from .wdnas import (
+    SCHEME,
+    InvalidLoginError,
+    RequestFailedError,
+    WDNASClient,
+    parse_uptime_text,
+)
 
 _STATUS_CODE_RE = re.compile(r"Request failed:\s*(\d{3})")
-_UPTIME_RE = re.compile(
-    r"(\d+)\s*days?\s*(\d+)\s*hour[s]?\s*(\d+)\s*minute[s]?", re.IGNORECASE
-)
 
 _POWER_COMMANDS = {"restart": "cgi_restart", "shutdown": "cgi_shutdown"}
 _POWER_SAFETY_COMMAND = "cmd=cgi_Detect_Dangerous"
@@ -40,26 +43,20 @@ class PowerActionBlockedError(Exception):
 
 
 def status_code(err: Exception) -> int | None:
-    """Extract the HTTP status code from a wdnas-client exception."""
+    """Extract the HTTP status code from a client exception."""
+    code = getattr(err, "status_code", None)
+    if isinstance(code, int):
+        return code
     match = _STATUS_CODE_RE.search(str(err))
     return int(match.group(1)) if match else None
 
 
-def parse_uptime_text(text: str) -> int | None:
-    """Parse the ``<uptime>`` text returned by the NAS into seconds."""
-    match = _UPTIME_RE.search(text)
-    if match is None:
-        return None
-    days, hours, minutes = (int(part) for part in match.groups())
-    return days * 86400 + hours * 3600 + minutes * 60
-
-
-class MyCloudClient(nas_client):
+class MyCloudClient(WDNASClient):
     """A WD NAS client with bounded requests and clean session lifecycle."""
 
     def __init__(self, username: str, password: str, host: str) -> None:
         """Initialize an OS5 client."""
-        super().__init__(username, password, host, 5)
+        super().__init__(username, password, host)
         self._session_lock = asyncio.Lock()
         self._power_lock = asyncio.Lock()
 
@@ -93,25 +90,16 @@ class MyCloudClient(nas_client):
 
     async def _async_uptime_from_status(self) -> int | None:
         """Read uptime from ``cgi_get_status`` when the dedicated call fails."""
-        if self.session is None:
-            return None
-
-        url = f"{SCHEME}{self.host}/cgi-bin/status_mgr.cgi"
-        headers = {
-            "Host": self.host,
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        }
-
         try:
-            async with self.session.post(
-                url, data="cmd=cgi_get_status", headers=headers
-            ) as response:
-                if response.status != 200:
-                    return None
-                text = await response.text()
-        except (aiohttp.ClientError, TimeoutError, OSError, ValueError):
+            text = await self._post_text("uptime", "cmd=cgi_get_status", form=True)
+        except (
+            RequestFailedError,
+            aiohttp.ClientError,
+            TimeoutError,
+            OSError,
+            ValueError,
+        ):
             return None
-
         return parse_uptime_text(text)
 
     async def async_power_action(self, action: str) -> None:
@@ -128,17 +116,12 @@ class MyCloudClient(nas_client):
         except KeyError as err:
             raise ValueError(f"Unsupported power action: {action}") from err
 
-        if self.session is None or self.session.closed:
-            raise ValueError("An authenticated NAS session is required")
-
-        headers = {
-            "Host": self.host,
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        }
+        session = self._require_session()
+        headers = self._headers(form=True)
 
         async with self._power_lock:
             safety_url = f"{SCHEME}{self.host}{_POWER_SAFETY_PATH}"
-            async with self.session.post(
+            async with session.post(
                 safety_url, data=_POWER_SAFETY_COMMAND, headers=headers
             ) as response:
                 if response.status != 200:
@@ -159,7 +142,7 @@ class MyCloudClient(nas_client):
 
             action_url = f"{SCHEME}{self.host}{_POWER_ACTION_PATH}"
             try:
-                async with self.session.post(
+                async with session.post(
                     action_url, data=f"cmd={command}", headers=headers
                 ) as response:
                     if response.status != 200:
@@ -195,3 +178,13 @@ class MyCloudClient(nas_client):
     async def __aexit__(self, exc_type, exc, traceback) -> None:
         """Exit the async context manager."""
         await self.async_close()
+
+
+__all__ = [
+    "InvalidLoginError",
+    "MyCloudClient",
+    "PowerActionBlockedError",
+    "RequestFailedError",
+    "parse_uptime_text",
+    "status_code",
+]

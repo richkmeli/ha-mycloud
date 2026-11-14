@@ -7,9 +7,9 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
-from wdnas_client.const import SCHEME
 
 from .const import CONF_HOST, DOMAIN
+from .wdnas import SCHEME
 
 # The NAS returns alert times in English, for example
 # "Fri, Nov 13, 2026 11:55:36 AM". Parsing them with strptime would depend on

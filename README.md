@@ -154,14 +154,14 @@ Entity names use the Home Assistant entity-naming convention and are translated 
 - The integration talks only to the host configured by the user. There are no hardcoded hosts, cloud calls or telemetry.
 - Every optional endpoint (firmware, shares, network, accounts, cloud access, USB) uses the same configured host and the same authenticated session; a failure in one endpoint only disables its own entities.
 - The account, cloud-access and USB sensors are created disabled in the entity registry. The account sensor exposes user names, e-mail addresses and group membership; enable it only when you need it.
-- The third-party dependency is pinned to the audited release `wdnas-client==0.9.4`.
+- The OS5 client is vendored in `custom_components/mycloud/wdnas.py`; there is no external runtime dependency. It is based on the audited, MIT-licensed `wdnas-client` 0.9.4. See [THIRD_PARTY_NOTICES.md](custom_components/mycloud/THIRD_PARTY_NOTICES.md).
 - There is no `eval`, `exec`, `subprocess`, shell execution or dynamic import in the integration.
 - The password is not copied into `hass.data`; the coordinator is kept in `entry.runtime_data` and owns the single client session.
 - Diagnostics redact the password, account lists, cloud-access payload and USB payload.
 
 ### Known limitation: plain HTTP
 
-The upstream `wdnas-client` library uses `http://` instead of HTTPS. Credentials are base64-encoded, which is encoding, not encryption. Someone who can sniff the local network can recover them. Use the integration only on a trusted network:
+The vendored OS5 client uses `http://` instead of HTTPS, because the WD firmware exposes a plain HTTP API. Credentials are base64-encoded, which is encoding, not encryption. Someone who can sniff the local network can recover them. Use the integration only on a trusted network:
 
 - Put the NAS and Home Assistant on a dedicated VLAN or trusted network.
 - Do not expose the NAS web interface to the internet.
@@ -235,7 +235,7 @@ ruff check custom_components tests
 ruff format --check custom_components tests
 ```
 
-The test suite covers host validation, config flow errors, setup and unload lifecycle, unique ID migration, stale device removal, coordinator re-authentication, entity values, translations and static security checks. CI requires at least 95% line coverage for every module of the integration.
+The test suite covers host validation, config flow errors, setup and unload lifecycle, unique ID migration, stale device removal, coordinator re-authentication, entity values, translations, static security checks and every vendored OS5 endpoint. CI requires at least 95% line coverage for every module of the integration, including the vendored client.
 
 CI, HACS validation, hassfest and CodeQL run on every push to `main`.
 
@@ -267,11 +267,13 @@ If your model is not listed, open an issue using the **New Device Support Reques
 
 ## Credits
 
-- [@J-shw](https://github.com/J-shw) for the original [ha-mycloud](https://github.com/J-shw/ha-mycloud) integration and the [wdnas_client](https://github.com/J-shw/wdnas_client) library.
+- [@J-shw](https://github.com/J-shw) for the original [ha-mycloud](https://github.com/J-shw/ha-mycloud) integration and the [wdnas_client](https://github.com/J-shw/wdnas_client) library, from which the vendored OS5 client is derived.
 - All upstream contributors who reverse-engineered and tested the WD NAS API.
 
 ## License
 
-The upstream `J-shw/ha-mycloud` repository does not include a license file. This fork preserves that upstream status and does not add a license. No license is granted for this repository; if you need clear redistribution rights, ask the upstream author. The integration is provided as-is, without warranty.
+The upstream `J-shw/ha-mycloud` repository does not include a license file. This fork preserves that upstream status and does not add a license for its own code. No license is granted for the rest of this repository; if you need clear redistribution rights, ask the upstream author. The integration is provided as-is, without warranty.
+
+The vendored OS5 client in `custom_components/mycloud/wdnas.py` is different: it is derived from `wdnas-client` and remains under the upstream MIT License. The full license text, copyright notice and provenance are in [THIRD_PARTY_NOTICES.md](custom_components/mycloud/THIRD_PARTY_NOTICES.md), which is included in every HACS release.
 
 Western Digital, My Cloud and related marks are trademarks of their respective owners.

@@ -28,11 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The coordinator also reloads the entry when network interfaces are added, removed or replaced, so their entities are created automatically.
 - Optional endpoint failures are isolated per endpoint and no longer affect the core sensors.
 - Diagnostics also redact the account lists and the cloud-access and USB payloads, not only the password.
+- The OS5 protocol client is now vendored in `custom_components/mycloud/wdnas.py`, based on `wdnas-client` 0.9.4 under its MIT license. There is no external runtime dependency, and the client is covered by the same per-module coverage gate as the integration.
+- The vendored client now requires the `PHPSESSID` cookie for a successful login, so a 200 response without a session is reported as an authentication failure instead of failing on the first data request.
 
 ### Removed
 
 - OS2 support: the software-version selector and the OS2 code paths.
 - The `power_controls` option.
+- The pinned `wdnas-client` runtime dependency and `requirements.txt`.
+
+### Fixed
+
+- The account response no longer includes groups in the user list, and group members are read from every `<user>` element instead of only the first one.
+- Missing optional disk and volume numeric fields default to zero instead of breaking the whole system-info payload.
 
 ## [2.0.0] - 2026-11-14
 

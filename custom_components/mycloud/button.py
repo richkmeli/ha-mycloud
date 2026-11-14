@@ -11,12 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from .client import PowerActionBlockedError
 from .const import DOMAIN
 from .coordinator import MyCloudCoordinator
 from .entity import build_device_info
+from .wdnas import InvalidLoginError, RequestFailedError
 
 PARALLEL_UPDATES = 0
 

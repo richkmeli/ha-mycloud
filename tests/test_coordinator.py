@@ -10,9 +10,9 @@ import aiohttp
 import pytest
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
-from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from custom_components.mycloud.coordinator import MyCloudCoordinator
+from custom_components.mycloud.wdnas import InvalidLoginError, RequestFailedError
 
 
 @pytest.fixture

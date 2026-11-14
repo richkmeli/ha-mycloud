@@ -12,7 +12,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from .client import MyCloudClient, status_code
 from .const import (
@@ -22,6 +21,7 @@ from .const import (
     DOMAIN,
 )
 from .entity import disk_key, volume_key
+from .wdnas import InvalidLoginError, RequestFailedError
 
 _LOGGER = logging.getLogger(__name__)
 

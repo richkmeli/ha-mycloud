@@ -9,11 +9,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.components.button import ButtonDeviceClass
 from homeassistant.exceptions import HomeAssistantError
-from wdnas_client.exceptions import RequestFailedError
 
 from custom_components.mycloud import button
 from custom_components.mycloud.client import PowerActionBlockedError
 from custom_components.mycloud.const import DOMAIN
+from custom_components.mycloud.wdnas import RequestFailedError
 
 PACKAGE = Path(__file__).parents[1] / "custom_components" / "mycloud"
 

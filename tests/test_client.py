@@ -7,11 +7,12 @@ from xml.etree.ElementTree import ParseError
 
 import aiohttp
 import pytest
-from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from custom_components.mycloud.client import (
+    InvalidLoginError,
     MyCloudClient,
     PowerActionBlockedError,
+    RequestFailedError,
     parse_uptime_text,
     status_code,
 )
@@ -40,6 +41,7 @@ class _FakeSession:
     def __init__(self, response: _FakeResponse) -> None:
         self.response = response
         self.calls: list[tuple[str, str]] = []
+        self.closed = False
 
     def post(self, url, data=None, headers=None):
         self.calls.append((url, data))
@@ -55,8 +57,10 @@ def test_parse_uptime_text():
 
 
 def test_status_code_extracts_http_status():
-    """The HTTP status is extracted from the upstream exception message."""
+    """The HTTP status is extracted from the client exception or message."""
     assert status_code(RequestFailedError(404)) == 404
+    assert status_code(RequestFailedError("missing session")) is None
+    assert status_code(Exception("Request failed: 502")) == 502
     assert status_code(Exception("not an HTTP error")) is None
 
 
@@ -229,6 +233,7 @@ async def test_uptime_from_status_handles_transport_errors():
     """A transport error during the fallback does not propagate."""
     client = MyCloudClient("admin", "secret", "nas.local")
     session = MagicMock()
+    session.closed = False
     session.post.side_effect = aiohttp.ClientError("offline")
     client.session = session
 

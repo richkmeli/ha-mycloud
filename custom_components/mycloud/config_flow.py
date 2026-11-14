@@ -17,7 +17,6 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from .client import MyCloudClient, status_code
 from .const import (
@@ -32,6 +31,7 @@ from .const import (
     MAX_UPDATE_INTERVAL,
     MIN_UPDATE_INTERVAL,
 )
+from .wdnas import InvalidLoginError, RequestFailedError
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -11,7 +11,6 @@ from homeassistant.exceptions import (
     ConfigEntryError,
     ConfigEntryNotReady,
 )
-from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from custom_components.mycloud import (
     async_migrate_unique_id,
@@ -20,6 +19,7 @@ from custom_components.mycloud import (
     async_unload_entry,
 )
 from custom_components.mycloud.const import DOMAIN
+from custom_components.mycloud.wdnas import InvalidLoginError, RequestFailedError
 
 
 @pytest.fixture

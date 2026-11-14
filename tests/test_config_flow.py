@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 from homeassistant.data_entry_flow import AbortFlow
-from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from custom_components.mycloud.config_flow import (
     MyCloudConfigFlow,
     MyCloudOptionsFlow,
     normalize_host,
 )
+from custom_components.mycloud.wdnas import InvalidLoginError, RequestFailedError
 
 
 @pytest.mark.parametrize(

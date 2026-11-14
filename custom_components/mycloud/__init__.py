@@ -14,7 +14,6 @@ from homeassistant.exceptions import (
     ConfigEntryNotReady,
 )
 from homeassistant.helpers import device_registry as dr
-from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from .client import MyCloudClient, status_code
 from .const import (
@@ -27,6 +26,7 @@ from .const import (
 )
 from .coordinator import MyCloudCoordinator
 from .entity import build_device_info, get_disk, get_volume
+from .wdnas import InvalidLoginError, RequestFailedError
 
 _LOGGER = logging.getLogger(__name__)
 
