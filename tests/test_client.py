@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from xml.etree.ElementTree import ParseError
 
 import aiohttp
 import pytest
@@ -10,6 +11,7 @@ from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from custom_components.mycloud.client import (
     MyCloudClient,
+    PowerActionBlockedError,
     parse_uptime_text,
     status_code,
 )
@@ -60,7 +62,7 @@ def test_status_code_extracts_http_status():
 
 async def test_connect_reconnect_and_close_use_the_session_lock():
     """The public lifecycle methods delegate to the locked helpers."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     client._async_open = AsyncMock()
     client._async_close_locked = AsyncMock()
 
@@ -74,7 +76,7 @@ async def test_connect_reconnect_and_close_use_the_session_lock():
 
 async def test_async_open_creates_a_bounded_session_and_logs_in():
     """Opening the client replaces the session and authenticates."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     session = MagicMock()
     session.closed = False
     session.close = AsyncMock()
@@ -93,7 +95,7 @@ async def test_async_open_creates_a_bounded_session_and_logs_in():
 
 async def test_async_open_closes_the_session_when_login_fails():
     """A failed login does not leak the new aiohttp session."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     session = MagicMock()
     session.closed = False
     session.close = AsyncMock()
@@ -114,7 +116,7 @@ async def test_async_open_closes_the_session_when_login_fails():
 
 async def test_close_locked_closes_only_open_sessions():
     """Closing an open session releases it and clears the reference."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     session = MagicMock()
     session.closed = False
     session.close = AsyncMock()
@@ -128,7 +130,7 @@ async def test_close_locked_closes_only_open_sessions():
 
 async def test_close_locked_skips_already_closed_sessions():
     """An already closed session is not closed twice."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     session = MagicMock()
     session.closed = True
     session.close = AsyncMock()
@@ -142,7 +144,7 @@ async def test_close_locked_skips_already_closed_sessions():
 
 async def test_client_context_manager_opens_and_closes():
     """The async context manager exposes the client and closes it."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     client.async_connect = AsyncMock()
     client.async_close = AsyncMock()
 
@@ -155,7 +157,7 @@ async def test_client_context_manager_opens_and_closes():
 
 async def test_async_uptime_falls_back_to_status():
     """A failing cgi_get_uptime is retried through cgi_get_status."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     client.uptime = AsyncMock(side_effect=RequestFailedError(500))
     client._async_uptime_from_status = AsyncMock(return_value=3000)
 
@@ -166,7 +168,7 @@ async def test_async_uptime_falls_back_to_status():
 
 async def test_async_uptime_falls_back_on_connection_error():
     """A transport error while reading uptime also uses the status fallback."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     client.uptime = AsyncMock(side_effect=aiohttp.ClientError("offline"))
     client._async_uptime_from_status = AsyncMock(return_value=3000)
 
@@ -174,18 +176,25 @@ async def test_async_uptime_falls_back_on_connection_error():
     client._async_uptime_from_status.assert_awaited_once()
 
 
-async def test_async_uptime_is_v5_only():
-    """V2 has no uptime endpoint and must not issue a request."""
-    client = MyCloudClient("admin", "secret", "nas.local", 2)
-    client.uptime = AsyncMock()
+def test_client_is_os5_only():
+    """The wrapper always uses the OS5 API."""
+    client = MyCloudClient("admin", "secret", "nas.local")
 
-    assert await client.async_uptime() is None
-    client.uptime.assert_not_awaited()
+    assert client.version == 5
+
+
+async def test_async_uptime_uses_the_primary_endpoint():
+    """Uptime uses cgi_get_uptime when the NAS supports it."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    client.uptime = AsyncMock(return_value=3000)
+
+    assert await client.async_uptime() == 3000
+    client.uptime.assert_awaited_once()
 
 
 async def test_uptime_from_status_uses_configured_host():
     """The fallback only talks to the configured NAS host."""
-    client = MyCloudClient("admin", "secret", "nas.local:8080", 5)
+    client = MyCloudClient("admin", "secret", "nas.local:8080")
     session = _FakeSession(
         _FakeResponse(200, "<uptime>1 day 2 hours 3 minutes</uptime>")
     )
@@ -199,7 +208,7 @@ async def test_uptime_from_status_uses_configured_host():
 
 async def test_uptime_from_status_returns_none_on_error():
     """A failed status request or missing uptime does not raise."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     client.session = _FakeSession(_FakeResponse(500, ""))
 
     assert await client._async_uptime_from_status() is None
@@ -210,7 +219,7 @@ async def test_uptime_from_status_returns_none_on_error():
 
 async def test_uptime_from_status_without_session_is_none():
     """The fallback is a no-op when the session is missing."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     client.session = None
 
     assert await client._async_uptime_from_status() is None
@@ -218,9 +227,140 @@ async def test_uptime_from_status_without_session_is_none():
 
 async def test_uptime_from_status_handles_transport_errors():
     """A transport error during the fallback does not propagate."""
-    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client = MyCloudClient("admin", "secret", "nas.local")
     session = MagicMock()
     session.post.side_effect = aiohttp.ClientError("offline")
     client.session = session
 
     assert await client._async_uptime_from_status() is None
+
+
+class _RecordingSession:
+    """Session that returns prepared responses and records power requests."""
+
+    def __init__(self, responses) -> None:
+        self.responses = list(responses)
+        self.calls: list[tuple[str, str, dict]] = []
+        self.closed = False
+
+    def post(self, url, data=None, headers=None):
+        self.calls.append((url, data, headers))
+        return self.responses.pop(0)
+
+
+class _DisconnectResponse:
+    """Response that simulates the NAS closing the connection."""
+
+    async def __aenter__(self):
+        raise aiohttp.ServerDisconnectedError()
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+async def test_power_action_checks_safety_then_shuts_down():
+    """Shutdown uses the authenticated session after the safety check."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = _RecordingSession(
+        [_FakeResponse(200, "<root><res>0</res></root>"), _FakeResponse(200, "")]
+    )
+    client.session = session
+
+    await client.async_power_action("shutdown")
+
+    assert [call[1] for call in session.calls] == [
+        "cmd=cgi_Detect_Dangerous",
+        "cmd=cgi_shutdown",
+    ]
+    assert session.calls[0][0] == "http://nas.local/cgi-bin/hd_config.cgi"
+    assert session.calls[1][0] == "http://nas.local/cgi-bin/system_mgr.cgi"
+    assert all(call[2]["Host"] == "nas.local" for call in session.calls)
+
+
+async def test_power_action_restart_uses_restart_command():
+    """Restart sends the cgi_restart command."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = _RecordingSession(
+        [_FakeResponse(200, "<root><res>0</res></root>"), _FakeResponse(200, "")]
+    )
+    client.session = session
+
+    await client.async_power_action("restart")
+
+    assert session.calls[1][1] == "cmd=cgi_restart"
+
+
+async def test_power_action_is_blocked_when_safety_check_fails():
+    """A non-zero safety code prevents the power action."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = _RecordingSession([_FakeResponse(200, "<root><res>2</res></root>")])
+    client.session = session
+
+    with pytest.raises(PowerActionBlockedError) as err:
+        await client.async_power_action("shutdown")
+
+    assert err.value.code == 2
+    assert len(session.calls) == 1
+
+
+async def test_power_action_rejects_malformed_safety_response():
+    """A missing or non-numeric safety result is not treated as safe."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = _RecordingSession([_FakeResponse(200, "<root/>")])
+    client.session = session
+
+    with pytest.raises(ParseError):
+        await client.async_power_action("shutdown")
+
+    session.responses = [_FakeResponse(200, "<root><res>yes</res></root>")]
+    with pytest.raises(ParseError):
+        await client.async_power_action("shutdown")
+
+
+async def test_power_action_reports_safety_http_error():
+    """An HTTP error from the safety endpoint is reported."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    client.session = _RecordingSession([_FakeResponse(500, "")])
+
+    with pytest.raises(RequestFailedError):
+        await client.async_power_action("shutdown")
+
+
+async def test_power_action_reports_action_http_error():
+    """An HTTP error from the action endpoint is reported."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    client.session = _RecordingSession(
+        [_FakeResponse(200, "<root><res>0</res></root>"), _FakeResponse(500, "")]
+    )
+
+    with pytest.raises(RequestFailedError):
+        await client.async_power_action("shutdown")
+
+
+async def test_power_action_treats_disconnect_as_success():
+    """The NAS may close the connection while it powers off."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = _RecordingSession(
+        [_FakeResponse(200, "<root><res>0</res></root>"), _DisconnectResponse()]
+    )
+    client.session = session
+
+    await client.async_power_action("shutdown")
+
+    assert len(session.calls) == 2
+
+
+async def test_power_action_requires_a_session():
+    """A missing session cannot issue power commands."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    with pytest.raises(ValueError):
+        await client.async_power_action("shutdown")
+
+
+async def test_power_action_rejects_unknown_action():
+    """Only restart and shutdown are accepted."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    client.session = _RecordingSession([])
+
+    with pytest.raises(ValueError):
+        await client.async_power_action("halt")

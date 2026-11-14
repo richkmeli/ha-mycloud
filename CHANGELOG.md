@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- All remaining OS5 data is now exposed, so users can enable only the entities they need:
+  - **Firmware** sensor, with the OLED text as an attribute.
+  - **Shares** sensor, with the share list as an attribute.
+  - **Network** sensor per interface, with the IP address as state and link speed, DHCP, DNS, netmask, gateway and interface state as attributes.
+  - **Accounts** sensor, with user and group details. It is disabled by default because it contains personal data.
+  - **Cloud access** sensor, with the complete NAS payload. It is disabled by default.
+  - **USB devices** sensor, with the complete payload. It is disabled by default until the schema is validated.
+  - **Network connected** binary sensor per interface.
+- Extra attributes on existing sensors: raw memory fields (total, unused and simple), alert sequence number, full disk hardware fields and volume fields.
+- **Restart** and **Shutdown** buttons. Restart is enabled by default; Shutdown is created disabled and can be enabled from the entity registry. The integration runs the NAS `cgi_Detect_Dangerous` safety check first, sends the action once and never retries.
+
+### Changed
+
+- **Breaking:** the integration now supports OS5 firmware only. Entries created for OS2 stop during setup with a clear `os2_not_supported` error. Users still on OS2 must update the NAS or stay on integration 2.0.0.
+- The config and reconfigure flows no longer ask for the software version; new entries are always OS5.
+- Restart and Shutdown are normal entities instead of an options-flow toggle, and the `power_controls` option was removed.
+- The coordinator also reloads the entry when network interfaces are added, removed or replaced, so their entities are created automatically.
+- Optional endpoint failures are isolated per endpoint and no longer affect the core sensors.
+- Diagnostics also redact the account lists and the cloud-access and USB payloads, not only the password.
+
+### Removed
+
+- OS2 support: the software-version selector and the OS2 code paths.
+- The `power_controls` option.
+
 ## [2.0.0] - 2026-11-14
 
 ### Changed

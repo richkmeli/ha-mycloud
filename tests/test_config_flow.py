@@ -77,7 +77,6 @@ USER_INPUT = {
     "Host": "nas.local",
     "Username": "admin",
     "Password": "secret",
-    "Version": 5,
 }
 
 
@@ -232,7 +231,7 @@ async def test_reauth_confirm_updates_password(reauth_flow):
         result = await reauth_flow.async_step_reauth_confirm({"Password": "new-secret"})
 
     assert result["type"] == "abort"
-    client_cls.assert_called_once_with("admin", "new-secret", "nas.local", 5)
+    client_cls.assert_called_once_with("admin", "new-secret", "nas.local")
     kwargs = reauth_flow.async_update_reload_and_abort.call_args.kwargs
     assert kwargs["data"]["Password"] == "new-secret"
     client.async_close.assert_awaited_once()
@@ -309,12 +308,11 @@ async def test_reconfigure_same_device_updates_host(reconfigure_flow):
                 "Host": "new-nas.local",
                 "Username": "admin",
                 "Password": "new-secret",
-                "Version": 5,
             }
         )
 
     assert result["type"] == "abort"
-    client_cls.assert_called_once_with("admin", "new-secret", "new-nas.local", 5)
+    client_cls.assert_called_once_with("admin", "new-secret", "new-nas.local")
     client.async_close.assert_awaited_once()
     reconfigure_flow.async_set_unique_id.assert_not_awaited()
     reconfigure_flow._abort_if_unique_id_mismatch.assert_not_called()
@@ -326,7 +324,6 @@ async def test_reconfigure_same_device_updates_host(reconfigure_flow):
         "Host": "new-nas.local",
         "Username": "admin",
         "Password": "new-secret",
-        "Version": 5,
         "Serial": "NAS-SERIAL",
     }
 

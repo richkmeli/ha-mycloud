@@ -10,7 +10,13 @@ from homeassistant.core import HomeAssistant
 
 from .const import CONF_PASSWORD
 
-TO_REDACT = {CONF_PASSWORD}
+TO_REDACT = {
+    CONF_PASSWORD,
+    "users",
+    "groups",
+    "cloud_access",
+    "usb_info",
+}
 
 
 async def async_get_config_entry_diagnostics(
@@ -18,6 +24,9 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry with credentials redacted."""
     coordinator = getattr(entry, "runtime_data", None)
+    data = getattr(coordinator, "data", None)
+    if isinstance(data, dict):
+        data = async_redact_data(data, TO_REDACT)
 
     return {
         "entry": {
@@ -30,6 +39,6 @@ async def async_get_config_entry_diagnostics(
         "coordinator": {
             "last_update_success": getattr(coordinator, "last_update_success", None),
             "last_exception": str(getattr(coordinator, "last_exception", "")) or None,
-            "data": getattr(coordinator, "data", None),
+            "data": data,
         },
     }

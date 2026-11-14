@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from xml.etree.ElementTree import ParseError, fromstring
 
 import aiohttp
 from wdnas_client import client as nas_client
@@ -22,6 +23,20 @@ _STATUS_CODE_RE = re.compile(r"Request failed:\s*(\d{3})")
 _UPTIME_RE = re.compile(
     r"(\d+)\s*days?\s*(\d+)\s*hour[s]?\s*(\d+)\s*minute[s]?", re.IGNORECASE
 )
+
+_POWER_COMMANDS = {"restart": "cgi_restart", "shutdown": "cgi_shutdown"}
+_POWER_SAFETY_COMMAND = "cmd=cgi_Detect_Dangerous"
+_POWER_SAFETY_PATH = "/cgi-bin/hd_config.cgi"
+_POWER_ACTION_PATH = "/cgi-bin/system_mgr.cgi"
+
+
+class PowerActionBlockedError(Exception):
+    """Raised when the NAS safety check refuses a power action."""
+
+    def __init__(self, code: int) -> None:
+        """Initialize the error with the NAS safety code."""
+        self.code = code
+        super().__init__(f"Power action blocked by the NAS (code {code})")
 
 
 def status_code(err: Exception) -> int | None:
@@ -42,10 +57,11 @@ def parse_uptime_text(text: str) -> int | None:
 class MyCloudClient(nas_client):
     """A WD NAS client with bounded requests and clean session lifecycle."""
 
-    def __init__(self, username: str, password: str, host: str, version: int) -> None:
-        """Initialize the client."""
-        super().__init__(username, password, host, version)
+    def __init__(self, username: str, password: str, host: str) -> None:
+        """Initialize an OS5 client."""
+        super().__init__(username, password, host, 5)
         self._session_lock = asyncio.Lock()
+        self._power_lock = asyncio.Lock()
 
     async def async_connect(self) -> None:
         """Open a session and authenticate."""
@@ -63,16 +79,13 @@ class MyCloudClient(nas_client):
             await self._async_close_locked()
 
     async def async_uptime(self) -> int | None:
-        """Return the V5 uptime in seconds.
+        """Return the OS5 uptime in seconds.
 
         Some firmware (for example 5.33.103) answers ``cgi_get_uptime`` with an
         empty HTTP 500 even though the same ``<uptime>`` element is present in
         ``cgi_get_status``. Try the documented command first and fall back to
         the status response, as proposed upstream in wdnas_client#50.
         """
-        if self.version != 5:
-            return None
-
         try:
             return await self.uptime()
         except (RequestFailedError, aiohttp.ClientError, TimeoutError, OSError):
@@ -100,6 +113,61 @@ class MyCloudClient(nas_client):
             return None
 
         return parse_uptime_text(text)
+
+    async def async_power_action(self, action: str) -> None:
+        """Restart or shut down the OS5 NAS over the authenticated session.
+
+        The WD dashboard checks ``cgi_Detect_Dangerous`` before restarting or
+        shutting down. A non-zero result means the NAS is busy (for example a
+        RAID operation or a firmware update) and the action must not be sent.
+        The action is sent exactly once: no retry or method fallback is used,
+        because an unanswered request may already have powered the device off.
+        """
+        try:
+            command = _POWER_COMMANDS[action]
+        except KeyError as err:
+            raise ValueError(f"Unsupported power action: {action}") from err
+
+        if self.session is None or self.session.closed:
+            raise ValueError("An authenticated NAS session is required")
+
+        headers = {
+            "Host": self.host,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        }
+
+        async with self._power_lock:
+            safety_url = f"{SCHEME}{self.host}{_POWER_SAFETY_PATH}"
+            async with self.session.post(
+                safety_url, data=_POWER_SAFETY_COMMAND, headers=headers
+            ) as response:
+                if response.status != 200:
+                    raise RequestFailedError(response.status)
+                # The payload comes from the NAS configured by the user and
+                # only its numeric res field is read. See SECURITY.md.
+                root = fromstring(await response.text())  # noqa: S314
+
+            result = root.findtext(".//res")
+            try:
+                code = int(result) if result is not None else None
+            except ValueError as err:
+                raise ParseError("Unexpected power safety response") from err
+            if code is None:
+                raise ParseError("Missing power safety result")
+            if code != 0:
+                raise PowerActionBlockedError(code)
+
+            action_url = f"{SCHEME}{self.host}{_POWER_ACTION_PATH}"
+            try:
+                async with self.session.post(
+                    action_url, data=f"cmd={command}", headers=headers
+                ) as response:
+                    if response.status != 200:
+                        raise RequestFailedError(response.status)
+                    await response.text()
+            except aiohttp.ServerDisconnectedError:
+                # The NAS may close the HTTP connection while it powers off.
+                return
 
     async def _async_open(self) -> None:
         """Create a fresh session and log in."""

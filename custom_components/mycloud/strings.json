@@ -7,14 +7,12 @@
         "data": {
           "Host": "Host",
           "Username": "Username",
-          "Password": "Password",
-          "Version": "Software version"
+          "Password": "Password"
         },
         "data_description": {
           "Host": "IP address or hostname, optionally with a port. Do not include http:// or https://.",
           "Username": "Admin account used to sign in to the NAS.",
-          "Password": "Password for the admin account. WD firmware allows only one active admin session.",
-          "Version": "2 for OS2 firmware, 5 for OS5 firmware."
+          "Password": "Password for the admin account. WD firmware allows only one active admin session."
         }
       },
       "reauth_confirm": {
@@ -29,18 +27,16 @@
       },
       "reconfigure": {
         "title": "Reconfigure WD My Cloud",
-        "description": "Update the NAS address, credentials or software version. The serial number is checked to keep this entry linked to the same NAS.",
+        "description": "Update the NAS address or credentials. The serial number is checked to keep this entry linked to the same NAS.",
         "data": {
           "Host": "Host",
           "Username": "Username",
-          "Password": "Password",
-          "Version": "Software version"
+          "Password": "Password"
         },
         "data_description": {
           "Host": "IP address or hostname, optionally with a port. Do not include http:// or https://.",
           "Username": "Admin account used to sign in to the NAS.",
-          "Password": "Password for the admin account.",
-          "Version": "2 for OS2 firmware, 5 for OS5 firmware."
+          "Password": "Password for the admin account."
         }
       }
     },
@@ -95,6 +91,24 @@
       "uptime": {
         "name": "Uptime"
       },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "shares": {
+        "name": "Shares"
+      },
+      "network": {
+        "name": "Network {interface}"
+      },
+      "accounts": {
+        "name": "Accounts"
+      },
+      "cloud_access": {
+        "name": "Cloud access"
+      },
+      "usb_devices": {
+        "name": "USB devices"
+      },
       "disk_temperature": {
         "name": "Temperature"
       },
@@ -103,6 +117,14 @@
       },
       "volume_size": {
         "name": "Size"
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Restart"
+      },
+      "shutdown": {
+        "name": "Shutdown"
       }
     },
     "binary_sensor": {
@@ -132,6 +154,9 @@
       },
       "volume_encrypted": {
         "name": "Encrypted"
+      },
+      "network_connected": {
+        "name": "Network {interface} connected"
       }
     }
   },
@@ -153,6 +178,15 @@
     },
     "unexpected_fetch_failed": {
       "message": "Unexpected error fetching data from the NAS: {error}"
+    },
+    "power_action_blocked": {
+      "message": "The NAS refused the power action because its safety check returned code {code}."
+    },
+    "power_action_failed": {
+      "message": "The power action failed: {error}"
+    },
+    "os2_not_supported": {
+      "message": "This entry was created for OS2 firmware, which is no longer supported. Delete the entry and add the NAS again after updating it to OS5."
     }
   }
 }

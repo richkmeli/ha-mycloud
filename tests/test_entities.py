@@ -14,16 +14,24 @@ from homeassistant.const import EntityCategory
 from custom_components.mycloud import binary_sensor, sensor
 from custom_components.mycloud.const import DOMAIN
 from custom_components.mycloud.entity import (
+    account_attributes,
+    account_count,
     as_bool,
     as_float,
     as_int,
     build_device_info,
     build_disk_info,
     build_volume_info,
+    cloud_access_state,
     get_disk,
+    get_network,
     get_volume,
     latest_alert,
+    network_interfaces,
     parse_alert_time,
+    payload_attributes,
+    share_names,
+    usb_device_count,
 )
 
 PACKAGE = Path(__file__).parents[1] / "custom_components" / "mycloud"
@@ -49,9 +57,14 @@ async def test_sensor_setup_creates_system_disk_and_volume_entities(
     storage = [
         entity for entity in entities if type(entity).__name__ == "MyCloudStorageSensor"
     ]
-    assert len(entities) == 11
+    assert len(entities) == 17
     assert by_class["MyCloudCPUSensor"].native_value == 12
     assert by_class["MyCloudMemorySensor"].native_value == 60.0
+    assert by_class["MyCloudMemorySensor"].extra_state_attributes == {
+        "total": 1_000,
+        "unused": 400,
+        "simple": "400 / 1000 MB",
+    }
     assert {entity._value_key: entity.native_value for entity in storage} == {
         "total": 4_000_000_000_000,
         "used": 1_000_000_000_000,
@@ -61,14 +74,71 @@ async def test_sensor_setup_creates_system_disk_and_volume_entities(
     assert by_class["MyCloudLatestAlertSensor"].native_value == "Power supply failure"
     assert by_class["MyCloudLatestAlertSensor"].extra_state_attributes == {
         "code": "1022",
+        "seq_num": "2",
         "level": "1",
         "description": "Power supply 1 failed.",
         "time": "Fri, Nov 13, 2026 11:55:36 AM",
     }
     assert by_class["MyCloudUptimeSensor"].native_value == 90_061
+    assert by_class["MyCloudFirmwareSensor"].native_value == "5.31.108"
+    assert by_class["MyCloudFirmwareSensor"].extra_state_attributes == {
+        "oled": "My Cloud"
+    }
+    assert by_class["MyCloudSharesSensor"].native_value == 2
+    assert by_class["MyCloudSharesSensor"].extra_state_attributes == {
+        "shares": ["Public", "Backup"]
+    }
+    assert by_class["MyCloudAccountsSensor"].native_value == 1
+    assert by_class["MyCloudAccountsSensor"].extra_state_attributes == {
+        "users": coordinator.data["accounts"]["users"],
+        "groups": coordinator.data["accounts"]["groups"],
+    }
+    assert by_class["MyCloudAccountsSensor"].entity_registry_enabled_default is False
+    assert by_class["MyCloudCloudAccessSensor"].native_value == "on"
+    assert by_class["MyCloudCloudAccessSensor"].extra_state_attributes == {
+        "success": True,
+        "item": {"enabled": True, "status": "on"},
+    }
+    assert by_class["MyCloudCloudAccessSensor"].entity_registry_enabled_default is False
+    assert by_class["MyCloudUSBDevicesSensor"].native_value == 1
+    assert by_class["MyCloudUSBDevicesSensor"].extra_state_attributes == {
+        "success": True,
+        "item": [{"name": "UPS"}],
+    }
+    assert by_class["MyCloudUSBDevicesSensor"].entity_registry_enabled_default is False
+    assert by_class["MyCloudNetworkSensor"].native_value == "192.168.1.42"
+    assert (
+        by_class["MyCloudNetworkSensor"].extra_state_attributes
+        == (coordinator.data["network"]["AA:BB:CC:DD:EE:FF"])
+    )
+    assert by_class["MyCloudNetworkSensor"].translation_placeholders == {
+        "interface": "AA:BB:CC:DD:EE:FF"
+    }
     assert by_class["MyCloudDiskTemperatureSensor"].native_value == 35.0
     assert by_class["MyCloudDiskSizeSensor"].native_value == 4_000_000_000_000
+    assert by_class["MyCloudDiskSizeSensor"].extra_state_attributes == {
+        "id": "disk-1",
+        "name": "Disk 1",
+        "sn": "WD-DISK-SN",
+        "model": "WD Red",
+        "rev": "1.0",
+        "connected": 1,
+        "failed": 0,
+        "healthy": 1,
+        "removable": 0,
+        "over_temp": 0,
+        "temp": 35,
+        "sleep": 0,
+    }
     assert by_class["MyCloudVolumeSizeSensor"].native_value == 3_999_000_000_000
+    assert by_class["MyCloudVolumeSizeSensor"].extra_state_attributes == {
+        "id": "volume-1",
+        "name": "Volume_1",
+        "label": "Data",
+        "encrypted": 0,
+        "unlocked": 1,
+        "mounted": 1,
+    }
 
     assert by_class["MyCloudCPUSensor"].entity_category == EntityCategory.DIAGNOSTIC
     assert by_class["MyCloudCPUSensor"].translation_key == "cpu_usage"
@@ -104,6 +174,12 @@ async def test_sensor_setup_creates_system_disk_and_volume_entities(
     assert "NAS-SERIAL_alert_count" in unique_ids
     assert "NAS-SERIAL_latest_alert" in unique_ids
     assert "NAS-SERIAL_uptime" in unique_ids
+    assert "NAS-SERIAL_firmware" in unique_ids
+    assert "NAS-SERIAL_shares" in unique_ids
+    assert "NAS-SERIAL_accounts" in unique_ids
+    assert "NAS-SERIAL_cloud_access" in unique_ids
+    assert "NAS-SERIAL_usb_devices" in unique_ids
+    assert "NAS-SERIAL_network_AA:BB:CC:DD:EE:FF" in unique_ids
     assert "NAS-SERIAL_disk-1_disk_temp" in unique_ids
     assert "NAS-SERIAL_volume-1_volume_size" in unique_ids
 
@@ -116,19 +192,48 @@ async def test_sensor_setup_creates_system_disk_and_volume_entities(
     assert (DOMAIN, "NAS-SERIAL:volume:volume-1") in identifiers
 
 
-async def test_v2_does_not_create_uptime_sensor(coordinator, config_entry):
-    """Uptime is a V5-only endpoint, so V2 gets no permanently unknown sensor."""
-    config_entry.data["Version"] = 2
-    coordinator.data["uptime"] = None
+async def test_optional_sensors_are_unavailable_without_data(coordinator, config_entry):
+    """Optional endpoints only disable their own entities."""
     config_entry.runtime_data = coordinator
-    hass = MagicMock()
     async_add_entities = MagicMock()
 
-    await sensor.async_setup_entry(hass, config_entry, async_add_entities)
-    entities = _entities(async_add_entities)
+    await sensor.async_setup_entry(MagicMock(), config_entry, async_add_entities)
+    entities = {
+        type(entity).__name__: entity for entity in _entities(async_add_entities)
+    }
 
-    assert len(entities) == 10
-    assert "MyCloudUptimeSensor" not in {type(entity).__name__ for entity in entities}
+    coordinator.data["system_version"] = None
+    coordinator.data["share_names"] = None
+    coordinator.data["accounts"] = None
+    coordinator.data["cloud_access"] = None
+    coordinator.data["usb_info"] = None
+    coordinator.data["network"] = None
+    coordinator.data["uptime"] = None
+
+    for name in (
+        "MyCloudFirmwareSensor",
+        "MyCloudSharesSensor",
+        "MyCloudAccountsSensor",
+        "MyCloudCloudAccessSensor",
+        "MyCloudUSBDevicesSensor",
+        "MyCloudNetworkSensor",
+        "MyCloudUptimeSensor",
+    ):
+        assert entities[name].available is False
+
+    assert entities["MyCloudFirmwareSensor"].native_value is None
+    assert entities["MyCloudFirmwareSensor"].extra_state_attributes == {}
+    assert entities["MyCloudSharesSensor"].native_value is None
+    assert entities["MyCloudSharesSensor"].extra_state_attributes == {}
+    assert entities["MyCloudAccountsSensor"].native_value is None
+    assert entities["MyCloudAccountsSensor"].extra_state_attributes == {}
+    assert entities["MyCloudCloudAccessSensor"].native_value is None
+    assert entities["MyCloudCloudAccessSensor"].extra_state_attributes == {}
+    assert entities["MyCloudUSBDevicesSensor"].native_value is None
+    assert entities["MyCloudUSBDevicesSensor"].extra_state_attributes == {}
+    assert entities["MyCloudNetworkSensor"].native_value is None
+    assert entities["MyCloudNetworkSensor"].extra_state_attributes == {}
+    assert entities["MyCloudUptimeSensor"].native_value is None
 
 
 def test_disk_device_name_does_not_duplicate_disk_prefix():
@@ -194,7 +299,7 @@ async def test_binary_sensor_setup_creates_disk_and_volume_entities(
     entities = _entities(async_add_entities)
 
     by_class = {type(entity).__name__: entity for entity in entities}
-    assert len(entities) == 9
+    assert len(entities) == 10
     assert by_class["MyCloudDiskHealthySensor"].is_on is True
     assert by_class["MyCloudDiskSleepSensor"].is_on is False
     assert by_class["MyCloudDiskFailedSensor"].is_on is False
@@ -204,6 +309,10 @@ async def test_binary_sensor_setup_creates_disk_and_volume_entities(
     assert by_class["MyCloudVolumeMountedSensor"].is_on is True
     assert by_class["MyCloudVolumeUnlockedSensor"].is_on is True
     assert by_class["MyCloudVolumeEncryptedSensor"].is_on is False
+    assert by_class["MyCloudNetworkConnectedSensor"].is_on is True
+    assert by_class["MyCloudNetworkConnectedSensor"].translation_placeholders == {
+        "interface": "AA:BB:CC:DD:EE:FF"
+    }
 
     assert by_class["MyCloudDiskFailedSensor"].device_class == (
         BinarySensorDeviceClass.PROBLEM
@@ -229,9 +338,10 @@ def test_sensor_device_classes_are_declared():
 
 
 async def test_setup_skips_malformed_hardware_entries(coordinator, config_entry):
-    """Non-dictionary disks and volumes do not create entities or raise."""
+    """Non-dictionary disks, volumes and interfaces are ignored safely."""
     coordinator.data["system_info"]["disks"].append("not-a-disk")
     coordinator.data["system_info"]["volumes"].append(None)
+    coordinator.data["network"]["AA:BB:CC:DD:EE:FF"] = "not-an-interface"
     config_entry.runtime_data = coordinator
     sensor_add = MagicMock()
     binary_add = MagicMock()
@@ -239,7 +349,7 @@ async def test_setup_skips_malformed_hardware_entries(coordinator, config_entry)
     await sensor.async_setup_entry(MagicMock(), config_entry, sensor_add)
     await binary_sensor.async_setup_entry(MagicMock(), config_entry, binary_add)
 
-    assert len(_entities(sensor_add)) == 11
+    assert len(_entities(sensor_add)) == 16
     assert len(_entities(binary_add)) == 9
 
 
@@ -315,7 +425,10 @@ async def test_missing_disk_and_volume_return_unknown(coordinator, config_entry)
         type(entity).__name__: entity for entity in _entities(sensor_add)
     }
     assert sensor_entities["MyCloudDiskTemperatureSensor"].native_value is None
+    assert sensor_entities["MyCloudDiskSizeSensor"].native_value is None
+    assert sensor_entities["MyCloudDiskSizeSensor"].extra_state_attributes == {}
     assert sensor_entities["MyCloudVolumeSizeSensor"].native_value is None
+    assert sensor_entities["MyCloudVolumeSizeSensor"].extra_state_attributes == {}
 
     binary_entities = {
         type(entity).__name__: entity for entity in _entities(binary_add)
@@ -407,6 +520,112 @@ def test_numeric_and_boolean_helpers():
     assert as_bool(1) is True
     assert as_bool(0) is False
     assert as_bool("bad") is None
+
+
+def test_share_and_account_helpers():
+    """Share and account payloads are unwrapped defensively."""
+    assert share_names(["Public", "Backup"]) == ["Public", "Backup"]
+    assert share_names({"item": ["Public"]}) == ["Public"]
+    assert share_names({"item": {"Public": "yes"}}) == ["Public"]
+    assert share_names({"Public": "yes"}) == ["Public"]
+    assert share_names("not a collection") is None
+    assert share_names(None) is None
+
+    accounts = {
+        "users": [{"name": "admin"}],
+        "groups": {"0": {"name": "administrators"}},
+    }
+    assert account_count(accounts) == 1
+    assert account_count({"users": "bad"}) is None
+    assert account_count(None) is None
+    assert account_attributes(accounts) == {
+        "users": accounts["users"],
+        "groups": accounts["groups"],
+    }
+    assert account_attributes({"users": []}) == {"users": []}
+    assert account_attributes(None) == {}
+
+
+def test_network_helpers():
+    """Network payloads expose only dictionary interfaces."""
+    network = {
+        "AA:BB": {"ip": "192.168.1.42"},
+        "bad": "not-an-interface",
+    }
+    assert network_interfaces(network) == {"AA:BB": {"ip": "192.168.1.42"}}
+    assert network_interfaces(None) == {}
+    assert network_interfaces(["bad"]) == {}
+
+    coordinator = MagicMock()
+    coordinator.data = {"network": network}
+    assert get_network(coordinator, "AA:BB") == {"ip": "192.168.1.42"}
+    assert get_network(coordinator, "missing") is None
+
+    coordinator.data = {"network": {"AA:BB": "bad"}}
+    assert get_network(coordinator, "AA:BB") is None
+    coordinator.data = {"network": "bad"}
+    assert get_network(coordinator, "AA:BB") is None
+
+
+def test_cloud_access_state_and_payload_attributes():
+    """Free-form payloads get a readable state and full attributes."""
+    assert cloud_access_state(True) == "on"
+    assert cloud_access_state(False) == "off"
+    assert cloud_access_state({"enabled": True}) == "on"
+    assert cloud_access_state({"enabled": False}) == "off"
+    assert cloud_access_state({"status": "on"}) == "on"
+    assert cloud_access_state({"item": {"enabled": True}}) == "on"
+    assert cloud_access_state({"value": "unknown"}) is None
+    assert cloud_access_state("ready") == "ready"
+    assert cloud_access_state(1) == "1"
+    assert cloud_access_state(["a", "b"]) == "2"
+    assert cloud_access_state(None) is None
+
+    assert payload_attributes({"a": 1}) == {"a": 1}
+    assert payload_attributes(None) == {}
+    assert payload_attributes(["a"]) == {"value": ["a"]}
+
+
+def test_usb_device_count():
+    """USB payloads are counted without assuming a fixed schema."""
+    assert usb_device_count([{"name": "UPS"}]) == 1
+    assert usb_device_count({"item": [{"name": "UPS"}]}) == 1
+    assert usb_device_count({"item": {"name": "UPS"}}) == 1
+    assert usb_device_count({"devices": [{"name": "UPS"}]}) == 1
+    assert usb_device_count({"data": [{"name": "UPS"}]}) == 1
+    assert usb_device_count({"success": True}) is None
+    assert usb_device_count("bad") is None
+    assert usb_device_count(None) is None
+
+
+async def test_network_sensor_without_ip_or_interface_is_unknown(
+    coordinator, config_entry
+):
+    """A missing interface or IP reports unknown instead of raising."""
+    coordinator.data["network"]["AA:BB:CC:DD:EE:FF"]["ip"] = None
+    config_entry.runtime_data = coordinator
+    sensor_add = MagicMock()
+    binary_add = MagicMock()
+
+    await sensor.async_setup_entry(MagicMock(), config_entry, sensor_add)
+    await binary_sensor.async_setup_entry(MagicMock(), config_entry, binary_add)
+
+    network = {type(entity).__name__: entity for entity in _entities(sensor_add)}[
+        "MyCloudNetworkSensor"
+    ]
+    connected = {type(entity).__name__: entity for entity in _entities(binary_add)}[
+        "MyCloudNetworkConnectedSensor"
+    ]
+    assert network.native_value is None
+    assert connected.is_on is True
+    assert connected.available is True
+
+    coordinator.data["network"] = {}
+    assert network.available is False
+    assert network.native_value is None
+    assert network.extra_state_attributes == {}
+    assert connected.available is False
+    assert connected.is_on is None
 
 
 def test_parse_alert_time_rejects_unknown_month_and_invalid_date():

@@ -31,7 +31,6 @@ from .const import (
     DOMAIN,
     MAX_UPDATE_INTERVAL,
     MIN_UPDATE_INTERVAL,
-    SUPPORTED_VERSIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -120,7 +119,6 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
                     host,
-                    user_input[CONF_VERSION],
                 )
                 title = host
                 serial = ""
@@ -150,7 +148,11 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     unique_id = serial or host
                     await self.async_set_unique_id(unique_id)
                     self._abort_if_unique_id_configured()
-                    data = {**user_input, CONF_HOST: host}
+                    data = {
+                        CONF_HOST: host,
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    }
                     if serial:
                         data[CONF_SERIAL] = serial
                     return self.async_create_entry(title=title, data=data)
@@ -167,9 +169,6 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     vol.Required(CONF_PASSWORD): TextSelector(
                         TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                    ),
-                    vol.Required(CONF_VERSION, default=5): vol.All(
-                        vol.Coerce(int), vol.In(SUPPORTED_VERSIONS)
                     ),
                 }
             ),
@@ -195,7 +194,6 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 entry.data[CONF_USERNAME],
                 user_input[CONF_PASSWORD],
                 entry.data[CONF_HOST],
-                entry.data[CONF_VERSION],
             )
             try:
                 await client.async_connect()
@@ -216,10 +214,13 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await client.async_close()
 
             if not errors:
-                return self.async_update_reload_and_abort(
-                    entry,
-                    data={**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]},
-                )
+                data = {
+                    key: value
+                    for key, value in entry.data.items()
+                    if key != CONF_VERSION
+                }
+                data[CONF_PASSWORD] = user_input[CONF_PASSWORD]
+                return self.async_update_reload_and_abort(entry, data=data)
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -236,7 +237,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """Update the host, credentials or software version of an entry."""
+        """Update the host or credentials of an entry."""
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
 
@@ -250,7 +251,6 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
                     host,
-                    user_input[CONF_VERSION],
                 )
                 title = host
                 serial = ""
@@ -293,7 +293,15 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             await self.async_set_unique_id(serial)
                             self._abort_if_unique_id_mismatch(reason="wrong_device")
 
-                    data = {**entry.data, **user_input, CONF_HOST: host}
+                    data = {
+                        key: value
+                        for key, value in {
+                            **entry.data,
+                            **user_input,
+                            CONF_HOST: host,
+                        }.items()
+                        if key != CONF_VERSION
+                    }
                     if serial:
                         data[CONF_SERIAL] = serial
                     return self.async_update_reload_and_abort(
@@ -316,9 +324,6 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_PASSWORD, default=entry.data.get(CONF_PASSWORD)
                     ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
-                    vol.Required(
-                        CONF_VERSION, default=entry.data.get(CONF_VERSION)
-                    ): vol.All(vol.Coerce(int), vol.In(SUPPORTED_VERSIONS)),
                 }
             ),
             errors=errors,
@@ -352,7 +357,7 @@ class MyCloudOptionsFlow(config_entries.OptionsFlowWithReload):
                     ): vol.All(
                         vol.Coerce(int),
                         vol.Range(min=MIN_UPDATE_INTERVAL, max=MAX_UPDATE_INTERVAL),
-                    )
+                    ),
                 }
             ),
             description_placeholders={

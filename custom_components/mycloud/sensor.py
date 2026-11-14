@@ -19,18 +19,25 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_VERSION
 from .coordinator import MyCloudCoordinator
 from .entity import (
+    account_attributes,
+    account_count,
     as_float,
     as_int,
     build_device_info,
     build_disk_info,
     build_volume_info,
+    cloud_access_state,
     coordinator_data,
     get_disk,
+    get_network,
     get_volume,
     latest_alert,
+    network_interfaces,
+    payload_attributes,
+    share_names,
+    usb_device_count,
 )
 
 PARALLEL_UPDATES = 0
@@ -59,10 +66,19 @@ async def async_setup_entry(
         MyCloudStorageSensor(coordinator, device_info, serial_number, "unused"),
         MyCloudAlertCountSensor(coordinator, device_info, serial_number),
         MyCloudLatestAlertSensor(coordinator, device_info, serial_number),
+        MyCloudUptimeSensor(coordinator, device_info, serial_number),
+        MyCloudFirmwareSensor(coordinator, device_info, serial_number),
+        MyCloudSharesSensor(coordinator, device_info, serial_number),
+        MyCloudAccountsSensor(coordinator, device_info, serial_number),
+        MyCloudCloudAccessSensor(coordinator, device_info, serial_number),
+        MyCloudUSBDevicesSensor(coordinator, device_info, serial_number),
     ]
 
-    if as_int(config_entry.data.get(CONF_VERSION)) == 5:
-        sensors.append(MyCloudUptimeSensor(coordinator, device_info, serial_number))
+    network = network_interfaces(coordinator_data(coordinator).get("network"))
+    for interface in sorted(network):
+        sensors.append(
+            MyCloudNetworkSensor(coordinator, device_info, serial_number, interface)
+        )
 
     disks = system_info.get("disks") or []
     if isinstance(disks, list):
@@ -180,6 +196,17 @@ class MyCloudMemorySensor(MyCloudSensorBase):
             return None
         return round(((total - unused) / total) * 100, 2)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the memory fields reported by the NAS."""
+        status = coordinator_data(self.coordinator).get("system_status") or {}
+        memory = status.get("memory") or {}
+        return {
+            key: memory[key]
+            for key in ("total", "unused", "simple")
+            if memory.get(key) is not None
+        }
+
 
 class MyCloudStorageSensor(MyCloudSensorBase):
     """Total, used or unused storage of the NAS."""
@@ -276,6 +303,7 @@ class MyCloudLatestAlertSensor(MyCloudSensorBase):
             return {}
         return {
             "code": alert.get("code"),
+            "seq_num": alert.get("seq_num"),
             "level": alert.get("level"),
             "description": alert.get("desc"),
             "time": alert.get("time"),
@@ -283,7 +311,7 @@ class MyCloudLatestAlertSensor(MyCloudSensorBase):
 
 
 class MyCloudUptimeSensor(MyCloudSensorBase):
-    """Uptime of the NAS (V5 only)."""
+    """Uptime of the NAS (OS5 only)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
@@ -301,9 +329,236 @@ class MyCloudUptimeSensor(MyCloudSensorBase):
         )
 
     @property
+    def available(self) -> bool:
+        """Return True when the uptime endpoint responded."""
+        return (
+            super().available
+            and coordinator_data(self.coordinator).get("uptime") is not None
+        )
+
+    @property
     def native_value(self) -> int | None:
         """Return the uptime in seconds."""
         return as_int(coordinator_data(self.coordinator).get("uptime"))
+
+
+class MyCloudFirmwareSensor(MyCloudSensorBase):
+    """Firmware version reported by the NAS."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = None
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_firmware",
+            "firmware",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True when the firmware endpoint responded."""
+        version = coordinator_data(self.coordinator).get("system_version")
+        return super().available and isinstance(version, dict)
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the firmware version."""
+        version = coordinator_data(self.coordinator).get("system_version") or {}
+        firmware = version.get("firmware")
+        return str(firmware).strip() if firmware is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the OLED text reported with the firmware."""
+        version = coordinator_data(self.coordinator).get("system_version") or {}
+        oled = version.get("oled")
+        return {"oled": oled} if oled is not None else {}
+
+
+class MyCloudSharesSensor(MyCloudSensorBase):
+    """Number of shares configured on the NAS."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = None
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_shares",
+            "shares",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True when the share endpoint responded."""
+        return (
+            super().available
+            and share_names(coordinator_data(self.coordinator).get("share_names"))
+            is not None
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the number of shares."""
+        shares = share_names(coordinator_data(self.coordinator).get("share_names"))
+        return len(shares) if shares is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the share names."""
+        shares = share_names(coordinator_data(self.coordinator).get("share_names"))
+        return {"shares": shares} if shares is not None else {}
+
+
+class MyCloudAccountsSensor(MyCloudSensorBase):
+    """User accounts reported by the NAS."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_state_class = None
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_accounts",
+            "accounts",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True when the account endpoint responded."""
+        accounts = coordinator_data(self.coordinator).get("accounts")
+        return super().available and isinstance(accounts, dict)
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the number of user accounts."""
+        return account_count(coordinator_data(self.coordinator).get("accounts"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the user and group details."""
+        return account_attributes(coordinator_data(self.coordinator).get("accounts"))
+
+
+class MyCloudCloudAccessSensor(MyCloudSensorBase):
+    """Cloud access configuration reported by the NAS."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_state_class = None
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_cloud_access",
+            "cloud_access",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True when the cloud-access endpoint responded."""
+        payload = coordinator_data(self.coordinator).get("cloud_access")
+        return super().available and payload is not None
+
+    @property
+    def native_value(self) -> str | None:
+        """Return a summary of the cloud-access payload."""
+        return cloud_access_state(
+            coordinator_data(self.coordinator).get("cloud_access")
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the complete cloud-access payload."""
+        return payload_attributes(
+            coordinator_data(self.coordinator).get("cloud_access")
+        )
+
+
+class MyCloudUSBDevicesSensor(MyCloudSensorBase):
+    """USB devices reported by the NAS."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_state_class = None
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_usb_devices",
+            "usb_devices",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True when the USB endpoint responded."""
+        payload = coordinator_data(self.coordinator).get("usb_info")
+        return super().available and payload is not None
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the number of USB devices."""
+        return usb_device_count(coordinator_data(self.coordinator).get("usb_info"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the complete USB payload."""
+        return payload_attributes(coordinator_data(self.coordinator).get("usb_info"))
+
+
+class MyCloudNetworkSensor(MyCloudSensorBase):
+    """IP and link details of a network interface."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = None
+
+    def __init__(self, coordinator, device_info, serial_number, interface) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_network_{interface}",
+            "network",
+        )
+        self._interface = interface
+        self._attr_translation_placeholders = {"interface": interface}
+
+    @property
+    def available(self) -> bool:
+        """Return True while the interface is reported."""
+        return (
+            super().available
+            and get_network(self.coordinator, self._interface) is not None
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the interface IP address."""
+        interface = get_network(self.coordinator, self._interface)
+        if not interface:
+            return None
+        ip_address = interface.get("ip")
+        return str(ip_address).strip() if ip_address is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return every network field reported for the interface."""
+        interface = get_network(self.coordinator, self._interface)
+        if not interface:
+            return {}
+        return dict(interface)
 
 
 class MyCloudDiskTemperatureSensor(MyCloudSensorBase):
@@ -350,6 +605,32 @@ class MyCloudDiskSizeSensor(MyCloudSensorBase):
         disk = get_disk(self.coordinator, self._disk_key)
         return as_int(disk.get("size")) if disk else None
 
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the disk details reported by the NAS."""
+        disk = get_disk(self.coordinator, self._disk_key)
+        if not disk:
+            return {}
+        return {
+            key: disk[key]
+            for key in (
+                "id",
+                "name",
+                "vendor",
+                "model",
+                "rev",
+                "sn",
+                "connected",
+                "failed",
+                "healthy",
+                "removable",
+                "over_temp",
+                "temp",
+                "sleep",
+            )
+            if disk.get(key) is not None
+        }
+
 
 class MyCloudVolumeSizeSensor(MyCloudSensorBase):
     """Size of a logical volume."""
@@ -372,3 +653,22 @@ class MyCloudVolumeSizeSensor(MyCloudSensorBase):
         """Return the volume size in bytes."""
         volume = get_volume(self.coordinator, self._volume_key)
         return as_int(volume.get("size")) if volume else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Return the volume details reported by the NAS."""
+        volume = get_volume(self.coordinator, self._volume_key)
+        if not volume:
+            return {}
+        return {
+            key: volume[key]
+            for key in (
+                "id",
+                "name",
+                "label",
+                "encrypted",
+                "unlocked",
+                "mounted",
+            )
+            if volume.get(key) is not None
+        }

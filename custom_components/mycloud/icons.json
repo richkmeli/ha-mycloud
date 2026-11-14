@@ -1,5 +1,13 @@
 {
   "entity": {
+    "button": {
+      "restart": {
+        "default": "mdi:restart"
+      },
+      "shutdown": {
+        "default": "mdi:power"
+      }
+    },
     "sensor": {
       "cpu_usage": {
         "default": "mdi:cpu-64-bit"
@@ -24,6 +32,24 @@
       },
       "uptime": {
         "default": "mdi:timer-outline"
+      },
+      "firmware": {
+        "default": "mdi:chip"
+      },
+      "shares": {
+        "default": "mdi:folder-multiple"
+      },
+      "network": {
+        "default": "mdi:lan"
+      },
+      "accounts": {
+        "default": "mdi:account-multiple"
+      },
+      "cloud_access": {
+        "default": "mdi:cloud-outline"
+      },
+      "usb_devices": {
+        "default": "mdi:usb"
       },
       "disk_temperature": {
         "default": "mdi:thermometer"
@@ -62,6 +88,9 @@
       },
       "volume_encrypted": {
         "default": "mdi:lock"
+      },
+      "network_connected": {
+        "default": "mdi:lan-connect"
       }
     }
   }

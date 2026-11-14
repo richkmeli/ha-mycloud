@@ -20,7 +20,9 @@ from .entity import (
     build_volume_info,
     coordinator_data,
     get_disk,
+    get_network,
     get_volume,
+    network_interfaces,
 )
 
 PARALLEL_UPDATES = 0
@@ -103,6 +105,14 @@ async def async_setup_entry(
                     ),
                 ]
             )
+
+    network = network_interfaces(coordinator_data(coordinator).get("network"))
+    for interface in sorted(network):
+        entities.append(
+            MyCloudNetworkConnectedSensor(
+                coordinator, device_info, serial_number, interface
+            )
+        )
 
     async_add_entities(entities)
 
@@ -318,3 +328,35 @@ class MyCloudVolumeEncryptedSensor(MyCloudBinarySensorBase):
         """Return True when the volume is encrypted."""
         volume = get_volume(self.coordinator, self._volume_key)
         return as_bool(volume.get("encrypted")) if volume else None
+
+
+class MyCloudNetworkConnectedSensor(MyCloudBinarySensorBase):
+    """Whether a network interface is enabled."""
+
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, device_info, serial_number, interface) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_network_{interface}_connected",
+            "network_connected",
+        )
+        self._interface = interface
+        self._attr_translation_placeholders = {"interface": interface}
+
+    @property
+    def available(self) -> bool:
+        """Return True while the interface is reported."""
+        return (
+            super().available
+            and get_network(self.coordinator, self._interface) is not None
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True when the interface is enabled."""
+        interface = get_network(self.coordinator, self._interface)
+        return as_bool(interface.get("lan_enabled")) if interface else None

@@ -29,12 +29,16 @@ def entry():
 def client(nas_data):
     """Return a mocked NAS client."""
     client = AsyncMock()
-    client.version = 5
     client.system_info.return_value = nas_data["system_info"]
     client.system_status.return_value = nas_data["system_status"]
     client.device_info.return_value = nas_data["device_info"]
     client.system_version.return_value = nas_data["system_version"]
     client.alerts.return_value = (len(nas_data["alerts"]), nas_data["alerts"])
+    client.share_names.return_value = nas_data["share_names"]
+    client.network_info.return_value = nas_data["network"]
+    client.accounts.return_value = nas_data["accounts"]
+    client.cloud_access.return_value = nas_data["cloud_access"]
+    client.usb_info.return_value = nas_data["usb_info"]
     client.async_uptime.return_value = nas_data["uptime"]
     return client
 
@@ -69,6 +73,11 @@ async def test_update_fetches_all_endpoints(coordinator, client, nas_data):
     client.device_info.assert_awaited_once()
     client.system_version.assert_awaited_once()
     client.alerts.assert_awaited_once()
+    client.share_names.assert_awaited_once()
+    client.network_info.assert_awaited_once()
+    client.accounts.assert_awaited_once()
+    client.cloud_access.assert_awaited_once()
+    client.usb_info.assert_awaited_once()
     client.async_uptime.assert_awaited_once()
 
 
@@ -120,14 +129,48 @@ async def test_optional_uptime_failure_keeps_core_data(coordinator, client, nas_
     assert data["alerts"] == nas_data["alerts"]
 
 
-async def test_uptime_not_requested_for_v2(coordinator, client):
-    """The uptime endpoint is V5-only."""
-    client.version = 2
+@pytest.mark.parametrize(
+    ("method", "data_key"),
+    [
+        ("share_names", "share_names"),
+        ("network_info", "network"),
+        ("accounts", "accounts"),
+        ("cloud_access", "cloud_access"),
+        ("usb_info", "usb_info"),
+    ],
+)
+async def test_optional_data_failures_are_isolated(
+    coordinator, client, nas_data, method, data_key
+):
+    """A failing optional endpoint only disables its own entities."""
+    getattr(client, method).side_effect = RequestFailedError(500)
 
     data = await coordinator._async_update_data()
 
-    assert data["uptime"] is None
-    client.async_uptime.assert_not_awaited()
+    assert data[data_key] is None
+    assert data["system_info"] == nas_data["system_info"]
+    assert data["uptime"] == nas_data["uptime"]
+
+
+@pytest.mark.parametrize(
+    "side_effect",
+    [
+        TypeError("unexpected type"),
+        IndexError("unexpected list access"),
+        NameError("missing local"),
+    ],
+)
+async def test_optional_parsing_failures_are_isolated(
+    coordinator, client, nas_data, side_effect
+):
+    """Unexpected upstream parsing errors only disable the optional sensor."""
+    client.accounts.side_effect = side_effect
+
+    data = await coordinator._async_update_data()
+
+    assert data["accounts"] is None
+    assert data["system_info"] == nas_data["system_info"]
+    assert data["uptime"] == nas_data["uptime"]
 
 
 async def test_update_reauthenticates_on_403(coordinator, client, nas_data):
@@ -315,6 +358,36 @@ async def test_topology_is_not_checked_while_stopping(coordinator, nas_data):
 
     await coordinator._async_update_data()
 
+    coordinator.hass.config_entries.async_schedule_reload.assert_not_called()
+
+
+async def test_network_change_schedules_reload(coordinator, entry, nas_data):
+    """Adding or removing a network interface reloads the entry once."""
+    await coordinator._async_update_data()
+    coordinator.hass.config_entries.async_schedule_reload.assert_not_called()
+
+    nas_data["network"]["11:22:33:44:55:66"] = {
+        "ip": "192.168.1.43",
+        "lan_enabled": True,
+    }
+
+    await coordinator._async_update_data()
+
+    coordinator.hass.config_entries.async_schedule_reload.assert_called_once_with(
+        entry.entry_id
+    )
+
+
+async def test_network_failure_does_not_trigger_a_topology_reload(
+    coordinator, client, nas_data
+):
+    """A transient network endpoint failure keeps the known interfaces."""
+    await coordinator._async_update_data()
+    client.network_info.side_effect = RequestFailedError(500)
+
+    data = await coordinator._async_update_data()
+
+    assert data["network"] is None
     coordinator.hass.config_entries.async_schedule_reload.assert_not_called()
 
 

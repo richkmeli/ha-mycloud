@@ -1,32 +1,38 @@
 # WD My Cloud
 
-Home Assistant integration for Western Digital My Cloud NAS devices running OS2 or OS5. The integration polls the NAS on the local network and exposes system, disk, volume, alert and uptime data as Home Assistant entities.
+Home Assistant integration for Western Digital My Cloud NAS devices running OS5. The integration polls the NAS on the local network and exposes system, disk, volume, network, share, account, cloud-access, USB, alert, power and uptime data as Home Assistant entities.
 
 This is a community fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-mycloud). It is not affiliated with Western Digital or Home Assistant.
 
 ## Features
 
 - **Local polling only** — no cloud service, telemetry or third-party endpoint.
-- **System status** — CPU and memory usage.
-- **Device information** — serial number, name, model and firmware version.
-- **Disks** — temperature, size, health, sleep, failure, over-temperature, connected and removable state.
-- **Volumes** — size, mounted, unlocked and encrypted state.
-- **Alerts** — number of entries in the NAS alert log and the latest alert with code, level, description and time.
+- **System status** — CPU and memory usage, including the raw memory fields.
+- **Device information** — serial number, name, model, firmware version and OLED text.
+- **Disks** — temperature, size, health, sleep, failure, over-temperature, connected, removable and hardware details.
+- **Volumes** — size, mounted, unlocked, encrypted and volume details.
+- **Network** — IP address, link speed, DHCP, DNS, netmask, gateway and interface state.
+- **Shares** — number of shares and their names.
+- **Accounts** — user and group details, disabled by default because they contain personal data.
+- **Cloud access** — the complete NAS cloud-access payload, disabled by default.
+- **USB devices** — connected USB payload, disabled by default until its schema is validated.
+- **Alerts** — number of entries in the NAS alert log and the latest alert with code, level, description, time and sequence number.
 - **Uptime** — OS5 uptime, including a `cgi_get_status` fallback for firmware that fails the dedicated uptime command.
-- **Config flow** — host, connection and credentials are validated before the entry is created.
-- **Reconfigure** — change the address, credentials or software version without removing the entry.
+- **Config flow** — host and credentials are validated before the entry is created.
+- **Reconfigure** — change the address or credentials without removing the entry.
 - **Stable identity** — the NAS serial number identifies the config entry and survives address changes.
 - **Re-authentication** — Home Assistant asks for the password again when the NAS rejects the stored credentials.
 - **Options** — configurable polling interval.
-- **Automatic topology refresh** — entities for new disks and volumes are created without a manual reload.
+- **Automatic topology refresh** — entities for new disks, volumes and network interfaces are created without a manual reload.
 - **Stale device removal** — disks and volumes that are no longer reported can be removed from the device page.
-- **Diagnostics** — downloadable diagnostics with the password redacted.
+- **Power controls** — Restart and Shutdown buttons. Restart is enabled by default; Shutdown is created disabled.
+- **Diagnostics** — downloadable diagnostics with the password and personal payloads redacted.
 - **Translations** — English and Italian, including entity names and setup errors.
 
 ## Requirements
 
-- Home Assistant 2026.8.0 or newer. Version 2.0.0 uses `via_device_id` and no longer loads on Home Assistant 2025.8–2026.7; users on those versions must stay on integration 1.5.0.
-- A WD My Cloud NAS running firmware OS2 (v2) or OS5 (v5).
+- Home Assistant 2026.8.0 or newer. Integration 2.0.0 and newer use `via_device_id` and do not load on Home Assistant 2025.8–2026.7; users on those versions must stay on integration 1.5.0.
+- A WD My Cloud NAS running firmware OS5 (v5). OS2 is no longer supported; entries created for OS2 stop during setup with a clear error.
 - An admin account on the NAS.
 - The NAS web interface reachable from Home Assistant.
 
@@ -55,18 +61,24 @@ This fork is not in the default HACS store. Add it as a custom repository:
 3. Enter the connection details:
    - **Host** — IP address or hostname of the NAS, optionally with a port. Examples: `192.168.1.10`, `wdmycloud.local`, `nas.local:8080`. Do not include `http://`, `https://`, a path or credentials.
    - **Username** and **Password** — credentials of an admin account.
-   - **Software version** — `2` for OS2 or `5` for OS5.
 4. The integration logs in, reads the device information and creates the entry only if the NAS responds correctly. The NAS serial number becomes the entry identity, so changing the host later does not create a duplicate entry.
 
 The host field is validated. Schemes, paths, query strings, fragments and `user:password@host` values are rejected.
 
 ### Reconfigure
 
-Open the integration entry and choose **Reconfigure** to change the host, username, password or software version. The new connection is validated before saving, and the NAS serial number is checked so the entry stays linked to the same physical device. To connect a different NAS, add a new integration entry. The entry reloads automatically after saving.
+Open the integration entry and choose **Reconfigure** to change the host, username or password. The new connection is validated before saving, and the NAS serial number is checked so the entry stays linked to the same physical device. To connect a different NAS, add a new integration entry. The entry reloads automatically after saving.
 
 ## Options
 
 Open the integration entry and choose **Configure** to change the polling interval. The default is 600 seconds; the accepted range is 30–86400 seconds.
+
+Power controls are normal entities, not an option. They are created on the NAS device and managed from the entity registry:
+
+- **Restart** is enabled by default.
+- **Shutdown** is created disabled. Enable it in **Settings → Devices & services → Entities** when you want to use it. This prevents a misclick or a voice assistant from powering off the NAS by accident.
+
+The integration asks the NAS to run its own safety check before either action; if the NAS is busy (for example during a RAID rebuild or firmware update), the action is refused. The command is sent once and never retried. Shutdown does not power the NAS back on: use Wake-on-LAN or physical access to start it again. Test the Shutdown button once while you can physically power the NAS back on, before relying on it in a UPS automation.
 
 ## Entities
 
@@ -81,7 +93,13 @@ Entity IDs depend on the device name. The examples below use `wd_my_cloud`; your
 - Unused storage — `sensor.wd_my_cloud_unused_storage`
 - Alert count — `sensor.wd_my_cloud_alert_count`
 - Latest alert — `sensor.wd_my_cloud_latest_alert`
-- Uptime (OS5 only) — `sensor.wd_my_cloud_uptime`
+- Uptime — `sensor.wd_my_cloud_uptime`
+- Firmware — `sensor.wd_my_cloud_firmware`
+- Shares — `sensor.wd_my_cloud_shares`
+- Accounts — `sensor.wd_my_cloud_accounts` (disabled by default)
+- Cloud access — `sensor.wd_my_cloud_cloud_access` (disabled by default)
+- USB devices — `sensor.wd_my_cloud_usb_devices` (disabled by default)
+- Network — `sensor.wd_my_cloud_network_[interface]`
 - Disk temperature — `sensor.wd_my_cloud_disk_[disk_name]_temperature`
 - Disk size — `sensor.wd_my_cloud_disk_[disk_name]_size`
 - Volume size — `sensor.wd_my_cloud_volume_[volume_name]_size`
@@ -97,18 +115,49 @@ Entity IDs depend on the device name. The examples below use `wd_my_cloud`; your
 - Volume mounted — `binary_sensor.wd_my_cloud_volume_[volume_name]_mounted`
 - Volume unlocked — `binary_sensor.wd_my_cloud_volume_[volume_name]_unlocked`
 - Volume encrypted — `binary_sensor.wd_my_cloud_volume_[volume_name]_encrypted`
+- Network connected — `binary_sensor.wd_my_cloud_network_[interface]_connected`
 
-`[disk_name]` and `[volume_name]` are replaced by the values reported by the NAS. Disk and volume devices are linked to the NAS device in the device registry. When disks or volumes are added, removed or replaced, the integration detects the change and reloads itself, so entities for new hardware are created without a manual step. If hardware is removed, its entities become unavailable; they return with their history when the hardware is reconnected. A disk or volume that will not come back can be deleted from its device page, and its entities are removed with it.
+`[disk_name]`, `[volume_name]` and `[interface]` are replaced by the values reported by the NAS. Disk and volume devices are linked to the NAS device in the device registry. When disks, volumes or network interfaces are added, removed or replaced, the integration detects the change and reloads itself, so entities for new hardware are created without a manual step. If hardware is removed, its entities become unavailable; they return with their history when the hardware is reconnected. A disk or volume that will not come back can be deleted from its device page, and its entities are removed with it.
 
-Entity names use the Home Assistant entity-naming convention and are translated into English and Italian; existing entity IDs are preserved. CPU, memory, uptime, alert, disk sleep, removable and volume encryption/unlock entities are marked as diagnostic. The alert sensors are optional: if the NAS does not expose the alert log, only those two entities become unavailable. The uptime sensor is created on OS5 only.
+Network sensors use the IP address as state and expose every other field returned by the NAS as attributes: link speed, DHCP, manual DNS, netmask, gateway, DNS servers and interface state. The interface identifier (usually the MAC address) is used in the entity name. Disk size sensors expose the disk hardware fields as attributes; volume size sensors expose the volume fields. The latest alert exposes code, sequence number, level, description and time. Firmware exposes the OLED text. The share sensor exposes the share names; the account sensor exposes user and group details, while the cloud-access and USB sensors expose the raw payload.
+
+### Buttons
+
+- Restart — `button.wd_my_cloud_restart` (enabled by default)
+- Shutdown — `button.wd_my_cloud_shutdown` (created disabled)
+
+Both buttons are attached to the main NAS device. A shutdown is irreversible from Home Assistant: the NAS stays off until it is powered on again. Use them in automations only after checking the UPS state and the remaining runtime. Enable the Shutdown entity before referencing it in an automation.
+
+Example UPS automation (replace the UPS entities with the ones exposed by your UPS integration):
+
+```yaml
+automation:
+  - alias: Shut down the NAS on low UPS battery
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.ups_battery_charge
+        below: 20
+    conditions:
+      - condition: state
+        entity_id: sensor.ups_status
+        state: "On Battery"
+    actions:
+      - action: button.press
+        target:
+          entity_id: button.wd_my_cloud_shutdown
+```
+
+Entity names use the Home Assistant entity-naming convention and are translated into English and Italian; existing entity IDs are preserved. CPU, memory, uptime, firmware, shares, network, network connectivity, account, cloud, USB, alert, disk sleep, removable and volume encryption/unlock entities are marked as diagnostic. The firmware, alert, uptime, share, network, account, cloud-access and USB sensors are optional: if the NAS does not expose one of those endpoints, only the related entities become unavailable.
 
 ## Security
 
-- The integration talks only to the host configured by the user. There are no hardcoded endpoints, cloud calls or telemetry.
+- The integration talks only to the host configured by the user. There are no hardcoded hosts, cloud calls or telemetry.
+- Every optional endpoint (firmware, shares, network, accounts, cloud access, USB) uses the same configured host and the same authenticated session; a failure in one endpoint only disables its own entities.
+- The account, cloud-access and USB sensors are created disabled in the entity registry. The account sensor exposes user names, e-mail addresses and group membership; enable it only when you need it.
 - The third-party dependency is pinned to the audited release `wdnas-client==0.9.4`.
 - There is no `eval`, `exec`, `subprocess`, shell execution or dynamic import in the integration.
 - The password is not copied into `hass.data`; the coordinator is kept in `entry.runtime_data` and owns the single client session.
-- Diagnostics redact the password.
+- Diagnostics redact the password, account lists, cloud-access payload and USB payload.
 
 ### Known limitation: plain HTTP
 
@@ -135,9 +184,25 @@ Use an admin account and verify the password. WD firmware allows only one active
 
 Remove `http://`, `https://`, paths, query strings and credentials from the host field.
 
-### Alerts or uptime are unavailable
+### Some sensors are unavailable
 
-The alert and uptime endpoints are optional. If the NAS firmware does not support them, the other sensors continue to work. Check the Home Assistant log with debug logging enabled.
+The firmware, alert, uptime, share, network, account, cloud-access and USB endpoints are optional. If the NAS firmware does not support one of them, only the related entities become unavailable and the other sensors keep working. Check the Home Assistant log with debug logging enabled for the failed endpoint.
+
+### An OS2 entry no longer loads
+
+OS2 firmware is not supported. The entry stops during setup with `os2_not_supported` instead of trying an OS5 login. Update the NAS to OS5, delete the old entry, and add it again with the same admin credentials.
+
+### The power action is refused
+
+The NAS safety check (`cgi_Detect_Dangerous`) returned a non-zero code, usually because a RAID operation, a firmware update or another maintenance task is in progress. Wait for the NAS to finish and try again. The integration does not retry a power command automatically.
+
+### The power action times out
+
+The NAS may drop the HTTP connection while it is powering off. The integration treats a dropped connection as a successful action, but a timeout can still be reported if the NAS stays silent. Check whether the NAS is shutting down before pressing the button again; never assume the first command was ignored.
+
+### The power buttons are missing or disabled
+
+The Restart and Shutdown buttons are always created for OS5 entries. Restart is enabled by default; Shutdown is disabled by default. Enable Shutdown in **Settings → Devices & services → Entities** if you want to use it. If neither button exists, check that the entry loaded correctly and that Home Assistant is running 2026.8.0 or newer.
 
 ### Enable debug logging
 
@@ -150,7 +215,7 @@ logger:
 
 ### Download diagnostics
 
-Go to **Settings → Devices & services → WD My Cloud → ⋮ → Download diagnostics**. The password is redacted automatically. Attach the file to a GitHub issue and remove any remaining personal information.
+Go to **Settings → Devices & services → WD My Cloud → ⋮ → Download diagnostics**. The password, account lists, cloud-access payload and USB payload are redacted automatically. Attach the file to a GitHub issue and remove any remaining personal information.
 
 ## Removal
 

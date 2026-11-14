@@ -8,13 +8,13 @@ from custom_components.mycloud.diagnostics import async_get_config_entry_diagnos
 
 
 async def test_diagnostics_redacts_password(coordinator, config_entry):
-    """The diagnostics payload never contains the password."""
+    """The diagnostics payload never contains the password or personal data."""
     config_entry.runtime_data = coordinator
     config_entry.title = "My Cloud"
     config_entry.options = {"Password": "option-secret"}
     hass = MagicMock()
 
-    result = await async_get_config_entry_diagnostics(hass, config_entry)
+    result = await async_get_config_entry_diagnostics(hass, entry=config_entry)
 
     assert result["entry"]["data"]["Password"] == "**REDACTED**"
     assert result["entry"]["options"]["Password"] == "**REDACTED**"
@@ -22,7 +22,14 @@ async def test_diagnostics_redacts_password(coordinator, config_entry):
     assert result["entry"]["data"]["Host"] == "nas.local"
     assert result["entry"]["title"] == "My Cloud"
     assert result["entry"]["unique_id"] == "nas.local"
-    assert result["coordinator"]["data"] == coordinator.data
+
+    data = result["coordinator"]["data"]
+    assert data["accounts"]["users"] == "**REDACTED**"
+    assert data["accounts"]["groups"] == "**REDACTED**"
+    assert data["cloud_access"] == "**REDACTED**"
+    assert data["usb_info"] == "**REDACTED**"
+    assert data["system_info"] == coordinator.data["system_info"]
+    assert "admin@example.com" not in str(result)
 
 
 async def test_diagnostics_tolerates_unloaded_entry(config_entry):

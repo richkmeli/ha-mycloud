@@ -8,7 +8,11 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryError,
+    ConfigEntryNotReady,
+)
 from homeassistant.helpers import device_registry as dr
 from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
@@ -26,7 +30,11 @@ from .entity import build_device_info, get_disk, get_volume
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+]
 
 type MyCloudConfigEntry = ConfigEntry[MyCloudCoordinator]
 
@@ -69,12 +77,18 @@ async def async_migrate_unique_id(
 
 async def async_setup_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> bool:
     """Set up WD My Cloud from a config entry."""
+    legacy_version = entry.data.get(CONF_VERSION)
+    if legacy_version is not None and str(legacy_version).strip() != "5":
+        raise ConfigEntryError(
+            translation_domain=DOMAIN,
+            translation_key="os2_not_supported",
+        )
+
     host = entry.data[CONF_HOST]
     client = MyCloudClient(
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
         host,
-        entry.data[CONF_VERSION],
     )
 
     try:

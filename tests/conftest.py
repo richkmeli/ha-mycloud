@@ -48,14 +48,60 @@ def nas_data() -> dict:
         },
         "system_status": {
             "cpu": 12,
-            "memory": {"total": 1_000, "unused": 400},
+            "memory": {
+                "total": 1_000,
+                "unused": 400,
+                "simple": "400 / 1000 MB",
+            },
         },
         "device_info": {
             "serial_number": "NAS-SERIAL",
             "name": "My Cloud",
             "description": "EX2 Ultra",
         },
-        "system_version": {"firmware": "5.31.108"},
+        "system_version": {"firmware": "5.31.108", "oled": "My Cloud"},
+        "share_names": ["Public", "Backup"],
+        "network": {
+            "AA:BB:CC:DD:EE:FF": {
+                "speed": "1000",
+                "dhcp_enable": True,
+                "dns_manual": False,
+                "ip": "192.168.1.42",
+                "netmask": "255.255.255.0",
+                "gateway": "192.168.1.1",
+                "lan_speed": "1000 Mbps",
+                "lan_enabled": True,
+                "dns1": "192.168.1.1",
+                "dns2": "",
+                "dns3": "",
+            }
+        },
+        "accounts": {
+            "users": [
+                {
+                    "uid": "0",
+                    "name": "admin",
+                    "email": "admin@example.com",
+                    "pwd": True,
+                    "gid": "0",
+                    "first_name": "Admin",
+                    "last_name": [],
+                    "hint": "",
+                }
+            ],
+            "groups": {
+                "0": {
+                    "name": "administrators",
+                    "user_cnt": "1",
+                    "users": ["admin"],
+                }
+            },
+        },
+        "cloud_access": {
+            "success": True,
+            "item": {"enabled": True, "status": "on"},
+        },
+        "usb_info": {"success": True, "item": [{"name": "UPS"}]},
         "alerts": [
             {
                 "code": "1002",
@@ -98,7 +144,6 @@ def config_entry():
         "Host": "nas.local",
         "Username": "admin",
         "Password": "secret",
-        "Version": 5,
     }
     entry.options = {}
     entry.unique_id = "nas.local"

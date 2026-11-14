@@ -7,14 +7,12 @@
         "data": {
           "Host": "Host",
           "Username": "Nome utente",
-          "Password": "Password",
-          "Version": "Versione software"
+          "Password": "Password"
         },
         "data_description": {
           "Host": "Indirizzo IP o hostname, facoltativamente con porta. Non includere http:// o https://.",
           "Username": "Account amministratore usato per accedere al NAS.",
-          "Password": "Password dell'account amministratore. Il firmware WD consente una sola sessione admin attiva.",
-          "Version": "2 per il firmware OS2, 5 per il firmware OS5."
+          "Password": "Password dell'account amministratore. Il firmware WD consente una sola sessione admin attiva."
         }
       },
       "reauth_confirm": {
@@ -29,18 +27,16 @@
       },
       "reconfigure": {
         "title": "Riconfigura WD My Cloud",
-        "description": "Aggiorna indirizzo, credenziali o versione software del NAS. Il numero di serie viene verificato per mantenere questa voce collegata allo stesso NAS.",
+        "description": "Aggiorna indirizzo o credenziali del NAS. Il numero di serie viene verificato per mantenere questa voce collegata allo stesso NAS.",
         "data": {
           "Host": "Host",
           "Username": "Nome utente",
-          "Password": "Password",
-          "Version": "Versione software"
+          "Password": "Password"
         },
         "data_description": {
           "Host": "Indirizzo IP o hostname, facoltativamente con porta. Non includere http:// o https://.",
           "Username": "Account amministratore usato per accedere al NAS.",
-          "Password": "Password dell'account amministratore.",
-          "Version": "2 per il firmware OS2, 5 per il firmware OS5."
+          "Password": "Password dell'account amministratore."
         }
       }
     },
@@ -95,6 +91,24 @@
       "uptime": {
         "name": "Tempo di attività"
       },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "shares": {
+        "name": "Condivisioni"
+      },
+      "network": {
+        "name": "Rete {interface}"
+      },
+      "accounts": {
+        "name": "Account"
+      },
+      "cloud_access": {
+        "name": "Accesso cloud"
+      },
+      "usb_devices": {
+        "name": "Dispositivi USB"
+      },
       "disk_temperature": {
         "name": "Temperatura"
       },
@@ -103,6 +117,14 @@
       },
       "volume_size": {
         "name": "Dimensione"
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Riavvia"
+      },
+      "shutdown": {
+        "name": "Spegni"
       }
     },
     "binary_sensor": {
@@ -132,6 +154,9 @@
       },
       "volume_encrypted": {
         "name": "Cifrato"
+      },
+      "network_connected": {
+        "name": "Rete {interface} connessa"
       }
     }
   },
@@ -153,6 +178,15 @@
     },
     "unexpected_fetch_failed": {
       "message": "Errore imprevisto durante il recupero dei dati dal NAS: {error}"
+    },
+    "power_action_blocked": {
+      "message": "Il NAS ha rifiutato l'azione di alimentazione perché il controllo di sicurezza ha restituito il codice {code}."
+    },
+    "power_action_failed": {
+      "message": "Azione di alimentazione non riuscita: {error}"
+    },
+    "os2_not_supported": {
+      "message": "Questa voce è stata creata per il firmware OS2, che non è più supportato. Elimina la voce e aggiungi di nuovo il NAS dopo averlo aggiornato a OS5."
     }
   }
 }

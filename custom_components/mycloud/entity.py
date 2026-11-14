@@ -190,6 +190,103 @@ def as_bool(value: Any) -> bool | None:
     return None if converted is None else bool(converted)
 
 
+def share_names(value: Any) -> list[Any] | None:
+    """Return the share names from the NAS payload, unwrapping ``item``."""
+    payload = (
+        value.get("item") if isinstance(value, dict) and "item" in value else value
+    )
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        return list(payload)
+    return None
+
+
+def account_count(value: Any) -> int | None:
+    """Return the number of user accounts reported by the NAS."""
+    if not isinstance(value, dict):
+        return None
+    users = value.get("users")
+    return len(users) if isinstance(users, list) else None
+
+
+def account_attributes(value: Any) -> dict[str, Any]:
+    """Return the account fields exposed as entity attributes."""
+    if not isinstance(value, dict):
+        return {}
+    return {key: value[key] for key in ("users", "groups") if key in value}
+
+
+def network_interfaces(value: Any) -> dict[str, dict[str, Any]]:
+    """Return the usable network interfaces keyed by a string identifier."""
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): details for key, details in value.items() if isinstance(details, dict)
+    }
+
+
+def get_network(coordinator, key: str) -> dict[str, Any] | None:
+    """Return the current network interface matching ``key``."""
+    network = coordinator_data(coordinator).get("network")
+    if not isinstance(network, dict):
+        return None
+    for interface_key, details in network.items():
+        if str(interface_key) == key and isinstance(details, dict):
+            return details
+    return None
+
+
+def cloud_access_state(value: Any) -> str | None:
+    """Return a readable state for the free-form cloud-access payload."""
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    if isinstance(value, dict):
+        for key in ("enabled", "active", "cloud_enabled", "relay_enabled"):
+            enabled = value.get(key)
+            if isinstance(enabled, bool):
+                return "on" if enabled else "off"
+        for key in ("status", "state"):
+            status = value.get(key)
+            if isinstance(status, (str, int, float)) and not isinstance(status, bool):
+                return str(status)
+        for key in ("item", "data", "result", "cloud_access"):
+            if key in value:
+                state = cloud_access_state(value[key])
+                if state is not None:
+                    return state
+        return None
+    if isinstance(value, (str, int, float)):
+        return str(value)
+    if isinstance(value, list):
+        return str(len(value))
+    return None
+
+
+def usb_device_count(value: Any) -> int | None:
+    """Return the number of USB devices in the free-form payload."""
+    if isinstance(value, list):
+        return len(value)
+    if isinstance(value, dict):
+        for key in ("item", "items", "devices", "usb", "data"):
+            nested = value.get(key)
+            if isinstance(nested, list):
+                return len(nested)
+            if isinstance(nested, dict):
+                return len(nested)
+        return None
+    return None
+
+
+def payload_attributes(value: Any) -> dict[str, Any]:
+    """Return a free-form payload as Home Assistant state attributes."""
+    if isinstance(value, dict):
+        return value
+    if value is None:
+        return {}
+    return {"value": value}
+
+
 def parse_alert_time(value: Any) -> datetime | None:
     """Parse an alert timestamp returned by the NAS, ignoring the locale."""
     if not isinstance(value, str):

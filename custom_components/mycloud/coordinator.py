@@ -50,7 +50,9 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.client = client
         self.device_id: str | None = None
         self._entry = entry
-        self._topology: tuple[tuple[str, ...], tuple[str, ...]] | None = None
+        self._topology: (
+            tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None
+        ) = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch all data used by the entities."""
@@ -137,8 +139,9 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_fetch(self) -> dict[str, Any]:
         """Fetch the data set exposed to the entities.
 
-        Alerts and uptime are optional: a failure in one of those endpoints
-        must not make the whole integration unavailable.
+        Optional endpoints are isolated: a failure in one of them must not make
+        the whole integration unavailable. This also keeps newer firmware or a
+        partially disabled NAS service from breaking the core sensors.
         """
         data: dict[str, Any] = {
             "system_info": await self.client.system_info(),
@@ -146,11 +149,13 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "device_info": await self.client.device_info(),
             "system_version": await self._async_optional(self.client.system_version),
             "alerts": await self._async_alerts(),
-            "uptime": None,
+            "share_names": await self._async_optional(self.client.share_names),
+            "network": await self._async_optional(self.client.network_info),
+            "accounts": await self._async_optional(self.client.accounts),
+            "cloud_access": await self._async_optional(self.client.cloud_access),
+            "usb_info": await self._async_optional(self.client.usb_info),
+            "uptime": await self._async_optional(self.client.async_uptime),
         }
-
-        if getattr(self.client, "version", None) == 5:
-            data["uptime"] = await self._async_optional(self.client.async_uptime)
 
         self._async_check_topology(data)
         return data
@@ -166,18 +171,31 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             TimeoutError,
             OSError,
             ValueError,
+            TypeError,
             AttributeError,
             KeyError,
+            IndexError,
+            NameError,
             ParseError,
         ) as err:
             _LOGGER.debug("Optional NAS endpoint failed: %s", err)
             return None
 
     def _async_check_topology(self, data: dict[str, Any]) -> None:
-        """Reload the entry when disks or volumes are added or removed."""
+        """Reload the entry when disks, volumes or network interfaces change."""
         system_info = data.get("system_info") or {}
         disks = system_info.get("disks") or []
         volumes = system_info.get("volumes") or []
+        network = data.get("network")
+        if isinstance(network, dict):
+            network_keys = tuple(sorted(str(key) for key in network))
+        elif self._topology is not None:
+            # Keep the previous interfaces when the optional endpoint fails so
+            # a transient error does not reload the entry twice.
+            network_keys = self._topology[2]
+        else:
+            network_keys = ()
+
         topology = (
             tuple(
                 sorted(str(disk_key(disk)) for disk in disks if isinstance(disk, dict))
@@ -189,6 +207,7 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if isinstance(volume, dict)
                 )
             ),
+            network_keys,
         )
 
         if self._topology is None:

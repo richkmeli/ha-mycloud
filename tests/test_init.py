@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryError,
+    ConfigEntryNotReady,
+)
 from wdnas_client.exceptions import InvalidLoginError, RequestFailedError
 
 from custom_components.mycloud import (
@@ -62,7 +66,7 @@ async def test_setup_stores_only_coordinator(hass, config_entry):
     assert "secret" not in repr(config_entry.runtime_data)
     assert hass.data == {}
     client.async_connect.assert_awaited_once()
-    client_cls.assert_called_once_with("admin", "secret", "nas.local", 5)
+    client_cls.assert_called_once_with("admin", "secret", "nas.local")
     hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 
     registry.async_get_or_create.assert_called_once_with(
@@ -76,6 +80,38 @@ async def test_setup_stores_only_coordinator(hass, config_entry):
         configuration_url=None,
     )
     assert coordinator.device_id == "nas-device"
+
+
+async def test_setup_rejects_a_legacy_os2_entry(hass, config_entry):
+    """An OS2 entry gets a clear error instead of an OS5 login attempt."""
+    config_entry.data["Version"] = 2
+
+    with patch("custom_components.mycloud.MyCloudClient") as client_cls:
+        with pytest.raises(ConfigEntryError) as err:
+            await async_setup_entry(hass, config_entry)
+
+    assert err.value.translation_key == "os2_not_supported"
+    client_cls.assert_not_called()
+    assert config_entry.runtime_data is None
+
+
+async def test_setup_accepts_a_legacy_os5_version_key(hass, config_entry):
+    """An old OS5 entry with Version=5 still loads."""
+    config_entry.data["Version"] = 5
+    client = AsyncMock()
+    coordinator = MagicMock()
+    coordinator.async_config_entry_first_refresh = AsyncMock()
+    coordinator.async_close = AsyncMock()
+    coordinator.data = {"device_info": {"serial_number": "NAS-SERIAL"}}
+    registry = MagicMock()
+    registry.async_get_or_create.return_value.id = "nas-device"
+
+    with (
+        patch("custom_components.mycloud.MyCloudClient", return_value=client),
+        patch("custom_components.mycloud.MyCloudCoordinator", return_value=coordinator),
+        patch("custom_components.mycloud.dr.async_get", return_value=registry),
+    ):
+        assert await async_setup_entry(hass, config_entry) is True
 
 
 async def test_setup_invalid_credentials_starts_reauth(hass, config_entry):
