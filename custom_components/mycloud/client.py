@@ -75,7 +75,7 @@ class MyCloudClient(nas_client):
 
         try:
             return await self.uptime()
-        except RequestFailedError:
+        except (RequestFailedError, aiohttp.ClientError, TimeoutError, OSError):
             return await self._async_uptime_from_status()
 
     async def _async_uptime_from_status(self) -> int | None:
@@ -96,7 +96,7 @@ class MyCloudClient(nas_client):
                 if response.status != 200:
                     return None
                 text = await response.text()
-        except (aiohttp.ClientError, TimeoutError, OSError):
+        except (aiohttp.ClientError, TimeoutError, OSError, ValueError):
             return None
 
         return parse_uptime_text(text)

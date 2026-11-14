@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+from xml.etree.ElementTree import ParseError
 
 import aiohttp
 import pytest
@@ -37,9 +39,17 @@ def client(nas_data):
 
 
 @pytest.fixture
-def coordinator(entry, client):
+def hass():
+    """Return a mocked Home Assistant object."""
+    hass = MagicMock()
+    hass.is_stopping = False
+    return hass
+
+
+@pytest.fixture
+def coordinator(hass, entry, client):
     """Return a coordinator using the mocked client."""
-    return MyCloudCoordinator(MagicMock(), entry, client)
+    return MyCloudCoordinator(hass, entry, client)
 
 
 async def test_update_fetches_all_endpoints(coordinator, client, nas_data):
@@ -64,6 +74,32 @@ async def test_optional_alerts_failure_keeps_core_data(coordinator, client, nas_
     assert data["alerts"] is None
     assert data["system_info"] == nas_data["system_info"]
     assert data["uptime"] == nas_data["uptime"]
+
+
+async def test_optional_alerts_parse_error_keeps_core_data(
+    coordinator, client, nas_data
+):
+    """Malformed alert XML only disables the alert sensors."""
+    client.alerts.side_effect = ParseError("malformed XML")
+
+    data = await coordinator._async_update_data()
+
+    assert data["alerts"] is None
+    assert data["system_info"] == nas_data["system_info"]
+    assert data["uptime"] == nas_data["uptime"]
+
+
+async def test_optional_system_version_failure_keeps_core_data(
+    coordinator, client, nas_data
+):
+    """A firmware endpoint without the expected XML nodes is not fatal."""
+    client.system_version.side_effect = AttributeError("missing oled node")
+
+    data = await coordinator._async_update_data()
+
+    assert data["system_version"] is None
+    assert data["system_info"] == nas_data["system_info"]
+    assert data["device_info"] == nas_data["device_info"]
 
 
 async def test_optional_uptime_failure_keeps_core_data(coordinator, client, nas_data):
@@ -101,8 +137,17 @@ async def test_update_reauthenticates_on_403(coordinator, client, nas_data):
 
 
 async def test_update_reconnects_when_session_is_missing(coordinator, client):
-    """A closed session is reopened before polling."""
+    """A missing session is reopened before polling."""
     client.session = None
+
+    await coordinator._async_update_data()
+
+    client.async_reconnect.assert_awaited_once()
+
+
+async def test_update_reconnects_when_session_is_closed(coordinator, client):
+    """A session object that is closed is reopened before polling."""
+    client.session = SimpleNamespace(closed=True)
 
     await coordinator._async_update_data()
 
@@ -148,6 +193,50 @@ async def test_update_client_error(coordinator, client):
 
     with pytest.raises(UpdateFailed):
         await coordinator._async_update_data()
+
+
+async def test_topology_change_schedules_reload(coordinator, entry, nas_data):
+    """Adding or removing a disk or volume reloads the entry once."""
+    await coordinator._async_update_data()
+    coordinator.hass.config_entries.async_schedule_reload.assert_not_called()
+
+    await coordinator._async_update_data()
+    coordinator.hass.config_entries.async_schedule_reload.assert_not_called()
+
+    nas_data["system_info"]["disks"].append(
+        {
+            "id": "disk-2",
+            "name": "Disk 2",
+            "sn": "WD-DISK-SN-2",
+            "model": "WD Red",
+            "rev": "1.0",
+            "size": 4_000_000_000_000,
+            "temp": 34,
+            "healthy": 1,
+            "sleep": 0,
+            "failed": 0,
+            "over_temp": 0,
+            "connected": 1,
+            "removable": 0,
+        }
+    )
+
+    await coordinator._async_update_data()
+
+    coordinator.hass.config_entries.async_schedule_reload.assert_called_once_with(
+        entry.entry_id
+    )
+
+
+async def test_topology_is_not_checked_while_stopping(coordinator, nas_data):
+    """A topology change during shutdown does not schedule another reload."""
+    await coordinator._async_update_data()
+    coordinator.hass.is_stopping = True
+    nas_data["system_info"]["volumes"].clear()
+
+    await coordinator._async_update_data()
+
+    coordinator.hass.config_entries.async_schedule_reload.assert_not_called()
 
 
 async def test_close_closes_client(coordinator, client):

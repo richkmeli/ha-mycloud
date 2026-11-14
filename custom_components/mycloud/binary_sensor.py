@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .coordinator import MyCloudCoordinator
 from .entity import (
     as_bool,
@@ -27,9 +27,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the WD My Cloud binary sensors."""
-    coordinator: MyCloudCoordinator | None = hass.data.get(DOMAIN, {}).get(
-        config_entry.entry_id
-    )
+    coordinator: MyCloudCoordinator | None = config_entry.runtime_data
     if coordinator is None:
         return
 
@@ -43,22 +41,28 @@ async def async_setup_entry(
         for index, disk in enumerate(disks):
             if not isinstance(disk, dict):
                 continue
-            disk_device, key, disk_name = build_disk_info(
+            disk_device, key, _ = build_disk_info(
                 serial_number, device_name, firmware, disk, index
             )
             entities.extend(
                 [
                     MyCloudDiskHealthySensor(
-                        coordinator, disk_device, serial_number, key, disk_name
+                        coordinator, disk_device, serial_number, key
                     ),
                     MyCloudDiskSleepSensor(
-                        coordinator, disk_device, serial_number, key, disk_name
+                        coordinator, disk_device, serial_number, key
                     ),
                     MyCloudDiskFailedSensor(
-                        coordinator, disk_device, serial_number, key, disk_name
+                        coordinator, disk_device, serial_number, key
                     ),
                     MyCloudDiskOverTemperatureSensor(
-                        coordinator, disk_device, serial_number, key, disk_name
+                        coordinator, disk_device, serial_number, key
+                    ),
+                    MyCloudDiskConnectedSensor(
+                        coordinator, disk_device, serial_number, key
+                    ),
+                    MyCloudDiskRemovableSensor(
+                        coordinator, disk_device, serial_number, key
                     ),
                 ]
             )
@@ -68,19 +72,19 @@ async def async_setup_entry(
         for index, volume in enumerate(volumes):
             if not isinstance(volume, dict):
                 continue
-            volume_device, key, volume_name = build_volume_info(
+            volume_device, key, _ = build_volume_info(
                 serial_number, device_name, volume, index
             )
             entities.extend(
                 [
                     MyCloudVolumeMountedSensor(
-                        coordinator, volume_device, serial_number, key, volume_name
+                        coordinator, volume_device, serial_number, key
                     ),
                     MyCloudVolumeUnlockedSensor(
-                        coordinator, volume_device, serial_number, key, volume_name
+                        coordinator, volume_device, serial_number, key
                     ),
                     MyCloudVolumeEncryptedSensor(
-                        coordinator, volume_device, serial_number, key, volume_name
+                        coordinator, volume_device, serial_number, key
                     ),
                 ]
             )
@@ -90,6 +94,8 @@ async def async_setup_entry(
 
 class MyCloudBinarySensorBase(CoordinatorEntity, BinarySensorEntity):
     """Base class for My Cloud binary sensors."""
+
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -110,15 +116,13 @@ class MyCloudBinarySensorBase(CoordinatorEntity, BinarySensorEntity):
 class MyCloudDiskHealthySensor(MyCloudBinarySensorBase):
     """Whether the disk reports itself as healthy."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, disk_key, disk_name
-    ) -> None:
+    def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_healthy",
-            f"{disk_name} Healthy",
+            "Healthy",
             "mdi:shield-check",
         )
         self._disk_key = disk_key
@@ -133,15 +137,15 @@ class MyCloudDiskHealthySensor(MyCloudBinarySensorBase):
 class MyCloudDiskSleepSensor(MyCloudBinarySensorBase):
     """Whether the disk is sleeping."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, disk_key, disk_name
-    ) -> None:
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_sleep",
-            f"{disk_name} Sleeping",
+            "Sleeping",
             "mdi:sleep",
         )
         self._disk_key = disk_key
@@ -156,15 +160,13 @@ class MyCloudDiskSleepSensor(MyCloudBinarySensorBase):
 class MyCloudDiskFailedSensor(MyCloudBinarySensorBase):
     """Whether the disk reports a failure."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, disk_key, disk_name
-    ) -> None:
+    def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_failed",
-            f"{disk_name} Failed",
+            "Failed",
             "mdi:alert",
         )
         self._disk_key = disk_key
@@ -179,15 +181,13 @@ class MyCloudDiskFailedSensor(MyCloudBinarySensorBase):
 class MyCloudDiskOverTemperatureSensor(MyCloudBinarySensorBase):
     """Whether the disk is over temperature."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, disk_key, disk_name
-    ) -> None:
+    def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_over_temp",
-            f"{disk_name} Over Temperature",
+            "Over Temperature",
             "mdi:thermometer-alert",
         )
         self._disk_key = disk_key
@@ -199,18 +199,60 @@ class MyCloudDiskOverTemperatureSensor(MyCloudBinarySensorBase):
         return as_bool(disk.get("over_temp")) if disk else None
 
 
+class MyCloudDiskConnectedSensor(MyCloudBinarySensorBase):
+    """Whether the disk is currently connected."""
+
+    def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_{disk_key}_disk_connected",
+            "Connected",
+            "mdi:harddisk-plus",
+        )
+        self._disk_key = disk_key
+
+    @property
+    def is_on(self) -> bool:
+        """Return True while the disk is present and connected."""
+        disk = get_disk(self.coordinator, self._disk_key)
+        return as_bool(disk.get("connected")) if disk else False
+
+
+class MyCloudDiskRemovableSensor(MyCloudBinarySensorBase):
+    """Whether the disk is removable."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(
+            coordinator,
+            device_info,
+            f"{serial_number}_{disk_key}_disk_removable",
+            "Removable",
+            "mdi:usb",
+        )
+        self._disk_key = disk_key
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True when the disk is removable."""
+        disk = get_disk(self.coordinator, self._disk_key)
+        return as_bool(disk.get("removable")) if disk else None
+
+
 class MyCloudVolumeMountedSensor(MyCloudBinarySensorBase):
     """Whether the volume is mounted."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, volume_key, volume_name
-    ) -> None:
+    def __init__(self, coordinator, device_info, serial_number, volume_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{volume_key}_volume_mounted",
-            f"{volume_name} Mounted",
+            "Mounted",
             "mdi:folder-pound",
         )
         self._volume_key = volume_key
@@ -225,15 +267,15 @@ class MyCloudVolumeMountedSensor(MyCloudBinarySensorBase):
 class MyCloudVolumeUnlockedSensor(MyCloudBinarySensorBase):
     """Whether the volume is unlocked."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, volume_key, volume_name
-    ) -> None:
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, device_info, serial_number, volume_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{volume_key}_volume_unlocked",
-            f"{volume_name} Unlocked",
+            "Unlocked",
             "mdi:lock-open",
         )
         self._volume_key = volume_key
@@ -248,15 +290,15 @@ class MyCloudVolumeUnlockedSensor(MyCloudBinarySensorBase):
 class MyCloudVolumeEncryptedSensor(MyCloudBinarySensorBase):
     """Whether the volume is encrypted."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, volume_key, volume_name
-    ) -> None:
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, device_info, serial_number, volume_key) -> None:
         """Initialize the binary sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{volume_key}_volume_encrypted",
-            f"{volume_name} Encrypted",
+            "Encrypted",
             "mdi:lock",
         )
         self._volume_key = volume_key

@@ -230,9 +230,86 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Update the host, credentials or software version of an entry."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
 
-class MyCloudOptionsFlow(config_entries.OptionsFlow):
-    """Options for the WD My Cloud integration."""
+        if user_input is not None:
+            try:
+                host = normalize_host(user_input[CONF_HOST])
+            except ValueError:
+                errors["base"] = "invalid_host"
+            else:
+                client = MyCloudClient(
+                    user_input[CONF_USERNAME],
+                    user_input[CONF_PASSWORD],
+                    host,
+                    user_input[CONF_VERSION],
+                )
+                title = host
+                try:
+                    await client.async_connect()
+                    device = await client.device_info()
+                    await client.system_info()
+                    title = str(device.get("name") or host).strip() or host
+                except InvalidLoginError:
+                    errors["base"] = "invalid_auth"
+                except RequestFailedError as err:
+                    errors["base"] = (
+                        "invalid_auth"
+                        if status_code(err) in (401, 403)
+                        else "cannot_connect"
+                    )
+                except (TimeoutError, aiohttp.ClientError, OSError):
+                    errors["base"] = "cannot_connect"
+                except Exception:
+                    _LOGGER.exception("Unexpected error validating the NAS")
+                    errors["base"] = "unknown"
+                finally:
+                    await client.async_close()
+
+                if not errors:
+                    if host != entry.unique_id:
+                        await self.async_set_unique_id(host)
+                        self._abort_if_unique_id_configured()
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        unique_id=host,
+                        title=title,
+                        data={**entry.data, **user_input, CONF_HOST: host},
+                    )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_HOST, default=entry.data.get(CONF_HOST)
+                    ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                    vol.Required(
+                        CONF_USERNAME, default=entry.data.get(CONF_USERNAME)
+                    ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                    vol.Required(
+                        CONF_PASSWORD, default=entry.data.get(CONF_PASSWORD)
+                    ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                    vol.Required(
+                        CONF_VERSION, default=entry.data.get(CONF_VERSION)
+                    ): vol.All(vol.Coerce(int), vol.In(SUPPORTED_VERSIONS)),
+                }
+            ),
+            errors=errors,
+        )
+
+
+class MyCloudOptionsFlow(config_entries.OptionsFlowWithReload):
+    """Options for the WD My Cloud integration.
+
+    ``OptionsFlowWithReload`` reloads the entry when the saved options change,
+    so the coordinator picks up the new polling interval immediately.
+    """
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

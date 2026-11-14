@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 from typing import Any
+from xml.etree.ElementTree import ParseError
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -19,6 +20,7 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
+from .entity import disk_key, volume_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,10 +46,13 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=entry,
         )
         self.client = client
+        self._entry = entry
+        self._topology: tuple[tuple[str, ...], tuple[str, ...]] | None = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch all data used by the entities."""
-        if self.client.session is None:
+        session = self.client.session
+        if session is None or getattr(session, "closed", False) is True:
             try:
                 await self.client.async_reconnect()
             except InvalidLoginError as err:
@@ -105,7 +110,7 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "system_info": await self.client.system_info(),
             "system_status": await self.client.system_status(),
             "device_info": await self.client.device_info(),
-            "system_version": await self.client.system_version(),
+            "system_version": await self._async_optional(self.client.system_version),
             "alerts": await self._async_alerts(),
             "uptime": None,
         }
@@ -113,6 +118,7 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if getattr(self.client, "version", None) == 5:
             data["uptime"] = await self._async_optional(self.client.async_uptime)
 
+        self._async_check_topology(data)
         return data
 
     async def _async_optional(self, fetch):
@@ -126,9 +132,41 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             TimeoutError,
             OSError,
             ValueError,
+            AttributeError,
+            KeyError,
+            ParseError,
         ) as err:
             _LOGGER.debug("Optional NAS endpoint failed: %s", err)
             return None
+
+    def _async_check_topology(self, data: dict[str, Any]) -> None:
+        """Reload the entry when disks or volumes are added or removed."""
+        system_info = data.get("system_info") or {}
+        disks = system_info.get("disks") or []
+        volumes = system_info.get("volumes") or []
+        topology = (
+            tuple(
+                sorted(str(disk_key(disk)) for disk in disks if isinstance(disk, dict))
+            ),
+            tuple(
+                sorted(
+                    str(volume_key(volume))
+                    for volume in volumes
+                    if isinstance(volume, dict)
+                )
+            ),
+        )
+
+        if self._topology is None:
+            self._topology = topology
+            return
+        if topology == self._topology:
+            return
+
+        self._topology = topology
+        if getattr(self.hass, "is_stopping", False):
+            return
+        self.hass.config_entries.async_schedule_reload(self._entry.entry_id)
 
     async def _async_alerts(self) -> list[dict[str, Any]] | None:
         """Return the alert list, or None when the NAS cannot provide it."""

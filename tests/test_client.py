@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
+import aiohttp
 from wdnas_client.exceptions import RequestFailedError
 
 from custom_components.mycloud.client import MyCloudClient, parse_uptime_text
@@ -54,6 +55,16 @@ async def test_async_uptime_falls_back_to_status():
 
     assert await client.async_uptime() == 3000
     client.uptime.assert_awaited_once()
+    client._async_uptime_from_status.assert_awaited_once()
+
+
+async def test_async_uptime_falls_back_on_connection_error():
+    """A transport error while reading uptime also uses the status fallback."""
+    client = MyCloudClient("admin", "secret", "nas.local", 5)
+    client.uptime = AsyncMock(side_effect=aiohttp.ClientError("offline"))
+    client._async_uptime_from_status = AsyncMock(return_value=3000)
+
+    assert await client.async_uptime() == 3000
     client._async_uptime_from_status.assert_awaited_once()
 
 

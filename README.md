@@ -9,13 +9,15 @@ This is a community fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-myclo
 - **Local polling only** — no cloud service, telemetry or third-party endpoint.
 - **System status** — CPU and memory usage.
 - **Device information** — serial number, name, model and firmware version.
-- **Disks** — temperature, size, health, sleep, failure and over-temperature state.
+- **Disks** — temperature, size, health, sleep, failure, over-temperature, connected and removable state.
 - **Volumes** — size, mounted, unlocked and encrypted state.
 - **Alerts** — number of entries in the NAS alert log and the latest alert with code, level, description and time.
 - **Uptime** — OS5 uptime, including a `cgi_get_status` fallback for firmware that fails the dedicated uptime command.
 - **Config flow** — host, connection and credentials are validated before the entry is created.
+- **Reconfigure** — change the address, credentials or software version without removing the entry.
 - **Re-authentication** — Home Assistant asks for the password again when the NAS rejects the stored credentials.
 - **Options** — configurable polling interval.
+- **Automatic topology refresh** — entities for new disks and volumes are created without a manual reload.
 - **Diagnostics** — downloadable diagnostics with the password redacted.
 - **Translations** — English and Italian.
 
@@ -56,6 +58,10 @@ This fork is not in the default HACS store. Add it as a custom repository:
 
 The host field is validated. Schemes, paths, query strings, fragments and `user:password@host` values are rejected.
 
+### Reconfigure
+
+Open the integration entry and choose **Reconfigure** to change the host, username, password or software version. The new connection is validated before saving. If the host changes, the unique ID and the entry title are updated, and the integration reloads automatically.
+
 ## Options
 
 Open the integration entry and choose **Configure** to change the polling interval. The default is 600 seconds; the accepted range is 30–86400 seconds.
@@ -84,20 +90,22 @@ Entity IDs depend on the device name. The examples below use `wd_my_cloud`; your
 - Disk sleeping — `binary_sensor.wd_my_cloud_disk_[disk_name]_sleeping`
 - Disk failed — `binary_sensor.wd_my_cloud_disk_[disk_name]_failed`
 - Disk over-temperature — `binary_sensor.wd_my_cloud_disk_[disk_name]_over_temperature`
+- Disk connected — `binary_sensor.wd_my_cloud_disk_[disk_name]_connected`
+- Disk removable — `binary_sensor.wd_my_cloud_disk_[disk_name]_removable`
 - Volume mounted — `binary_sensor.wd_my_cloud_volume_[volume_name]_mounted`
 - Volume unlocked — `binary_sensor.wd_my_cloud_volume_[volume_name]_unlocked`
 - Volume encrypted — `binary_sensor.wd_my_cloud_volume_[volume_name]_encrypted`
 
-`[disk_name]` and `[volume_name]` are replaced by the values reported by the NAS. If a disk is added, removed or replaced, reload the integration so the entities are discovered again.
+`[disk_name]` and `[volume_name]` are replaced by the values reported by the NAS. When disks or volumes are added, removed or replaced, the integration detects the change and reloads itself, so entities for new hardware are created without a manual step. If hardware is removed, its entities become unavailable; they return with their history when the hardware is reconnected, or they can be deleted from the entity registry if it will not come back.
 
-The alert sensors are optional. If the NAS does not expose the alert log, only those two entities become unavailable. The uptime sensor is created on OS5 only.
+Entity names are in English and use the Home Assistant entity-naming convention. CPU, memory, uptime, alert, disk sleep, removable and volume encryption/unlock entities are marked as diagnostic. The alert sensors are optional: if the NAS does not expose the alert log, only those two entities become unavailable. The uptime sensor is created on OS5 only.
 
 ## Security
 
 - The integration talks only to the host configured by the user. There are no hardcoded endpoints, cloud calls or telemetry.
 - The third-party dependency is pinned to the audited release `wdnas-client==0.9.4`.
 - There is no `eval`, `exec`, `subprocess`, shell execution or dynamic import in the integration.
-- The password is not copied into `hass.data`; only the coordinator is stored there.
+- The password is not copied into `hass.data`; the coordinator is kept in `entry.runtime_data` and owns the single client session.
 - Diagnostics redact the password.
 
 ### Known limitation: plain HTTP

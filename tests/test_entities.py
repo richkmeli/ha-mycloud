@@ -5,9 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import MagicMock
 
+from homeassistant.const import EntityCategory
+
 from custom_components.mycloud import binary_sensor, sensor
 from custom_components.mycloud.const import DOMAIN
-from custom_components.mycloud.entity import latest_alert, parse_alert_time
+from custom_components.mycloud.entity import (
+    build_disk_info,
+    latest_alert,
+    parse_alert_time,
+)
 
 
 def _entities(async_add_entities):
@@ -18,8 +24,9 @@ async def test_sensor_setup_creates_system_disk_and_volume_entities(
     coordinator, config_entry
 ):
     """All sensor entities are created with stable unique IDs."""
+    coordinator.config_entry = config_entry
+    config_entry.runtime_data = coordinator
     hass = MagicMock()
-    hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
     async_add_entities = MagicMock()
 
     await sensor.async_setup_entry(hass, config_entry, async_add_entities)
@@ -50,6 +57,18 @@ async def test_sensor_setup_creates_system_disk_and_volume_entities(
     assert by_class["MyCloudDiskSizeSensor"].native_value == 4_000_000_000_000
     assert by_class["MyCloudVolumeSizeSensor"].native_value == 3_999_000_000_000
 
+    assert by_class["MyCloudCPUSensor"].entity_category == EntityCategory.DIAGNOSTIC
+    assert by_class["MyCloudCPUSensor"].name == "CPU Usage"
+    assert by_class["MyCloudDiskTemperatureSensor"].name == "Temperature"
+    assert (
+        by_class["MyCloudDiskTemperatureSensor"].device_info["name"]
+        == "My Cloud Disk 1"
+    )
+    assert (
+        by_class["MyCloudCPUSensor"].device_info["configuration_url"]
+        == "http://nas.local"
+    )
+
     unique_ids = {entity.unique_id for entity in entities}
     assert "NAS-SERIAL_cpu_usage" in unique_ids
     assert "NAS-SERIAL_alert_count" in unique_ids
@@ -71,8 +90,8 @@ async def test_v2_does_not_create_uptime_sensor(coordinator, config_entry):
     """Uptime is a V5-only endpoint, so V2 gets no permanently unknown sensor."""
     config_entry.data["Version"] = 2
     coordinator.data["uptime"] = None
+    config_entry.runtime_data = coordinator
     hass = MagicMock()
-    hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
     async_add_entities = MagicMock()
 
     await sensor.async_setup_entry(hass, config_entry, async_add_entities)
@@ -80,6 +99,19 @@ async def test_v2_does_not_create_uptime_sensor(coordinator, config_entry):
 
     assert len(entities) == 10
     assert "MyCloudUptimeSensor" not in {type(entity).__name__ for entity in entities}
+
+
+def test_disk_device_name_does_not_duplicate_disk_prefix():
+    """A disk already named "Disk 1" does not become "Disk Disk 1"."""
+    _, _, name = build_disk_info(
+        "NAS-SERIAL", "NAS", None, {"id": "disk-1", "name": "Disk 1"}, 0
+    )
+    assert name == "NAS Disk 1"
+
+    _, _, name = build_disk_info(
+        "NAS-SERIAL", "NAS", None, {"id": "bay-1", "name": "Bay 1"}, 0
+    )
+    assert name == "NAS Disk Bay 1"
 
 
 def test_parse_alert_time_is_locale_independent():
@@ -114,19 +146,21 @@ async def test_binary_sensor_setup_creates_disk_and_volume_entities(
     coordinator, config_entry
 ):
     """All binary sensor entities are created with stable unique IDs."""
+    config_entry.runtime_data = coordinator
     hass = MagicMock()
-    hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
     async_add_entities = MagicMock()
 
     await binary_sensor.async_setup_entry(hass, config_entry, async_add_entities)
     entities = _entities(async_add_entities)
 
     by_class = {type(entity).__name__: entity for entity in entities}
-    assert len(entities) == 7
+    assert len(entities) == 9
     assert by_class["MyCloudDiskHealthySensor"].is_on is True
     assert by_class["MyCloudDiskSleepSensor"].is_on is False
     assert by_class["MyCloudDiskFailedSensor"].is_on is False
     assert by_class["MyCloudDiskOverTemperatureSensor"].is_on is False
+    assert by_class["MyCloudDiskConnectedSensor"].is_on is True
+    assert by_class["MyCloudDiskRemovableSensor"].is_on is False
     assert by_class["MyCloudVolumeMountedSensor"].is_on is True
     assert by_class["MyCloudVolumeUnlockedSensor"].is_on is True
     assert by_class["MyCloudVolumeEncryptedSensor"].is_on is False
@@ -134,8 +168,8 @@ async def test_binary_sensor_setup_creates_disk_and_volume_entities(
 
 async def test_missing_disk_and_volume_return_unknown(coordinator, config_entry):
     """Removed hardware reports unknown instead of crashing."""
+    config_entry.runtime_data = coordinator
     hass = MagicMock()
-    hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
     sensor_add = MagicMock()
     binary_add = MagicMock()
 
@@ -160,8 +194,8 @@ async def test_missing_disk_and_volume_return_unknown(coordinator, config_entry)
 
 async def test_platform_setup_without_coordinator_does_nothing(config_entry):
     """A missing coordinator is ignored instead of raising."""
+    config_entry.runtime_data = None
     hass = MagicMock()
-    hass.data = {}
     async_add_entities = MagicMock()
 
     await sensor.async_setup_entry(hass, config_entry, async_add_entities)

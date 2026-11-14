@@ -7,8 +7,9 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
+from wdnas_client.const import SCHEME
 
-from .const import DOMAIN
+from .const import CONF_HOST, DOMAIN
 
 # The NAS returns alert times in English, for example
 # "Fri, Nov 13, 2026 11:55:36 AM". Parsing them with strptime would depend on
@@ -51,12 +52,17 @@ def build_device_info(coordinator) -> tuple[DeviceInfo, str, str, str | None]:
     device_name = str(device.get("name") or "WD My Cloud").strip() or "WD My Cloud"
     firmware = version.get("firmware")
 
+    entry_data = getattr(coordinator.config_entry, "data", None)
+    host = entry_data.get(CONF_HOST) if isinstance(entry_data, dict) else None
+    configuration_url = f"{SCHEME}{host}" if host else None
+
     info = DeviceInfo(
         identifiers={(DOMAIN, serial_number)},
         name=device_name,
         manufacturer="Western Digital",
         model=device.get("description"),
         sw_version=firmware,
+        configuration_url=configuration_url,
     )
     return info, serial_number, device_name, firmware
 
@@ -75,8 +81,13 @@ def build_disk_info(
 ) -> tuple[DeviceInfo, str, str]:
     """Build a disk device and return its key and display name."""
     key = disk_key(disk)
-    label = disk.get("name") or disk.get("id") or f"Disk {index + 1}"
-    name = f"{device_name} Disk {label}"
+    label = str(disk.get("name") or disk.get("id") or f"Disk {index + 1}").strip()
+    if not label:
+        label = f"Disk {index + 1}"
+    if label.lower().startswith("disk"):
+        name = f"{device_name} {label}"
+    else:
+        name = f"{device_name} Disk {label}"
 
     info = DeviceInfo(
         identifiers={(DOMAIN, f"{serial_number}:disk:{key}")},

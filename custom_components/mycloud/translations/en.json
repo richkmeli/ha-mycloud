@@ -17,6 +17,16 @@
         "data": {
           "Password": "Password"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure WD My Cloud",
+        "description": "Update the NAS address, credentials or software version. The entry reloads after saving.",
+        "data": {
+          "Host": "Host",
+          "Username": "Username",
+          "Password": "Password",
+          "Version": "Software version"
+        }
       }
     },
     "error": {

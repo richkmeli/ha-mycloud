@@ -8,12 +8,18 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfInformation, UnitOfTemperature, UnitOfTime
+from homeassistant.const import (
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfInformation,
+    UnitOfTemperature,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_VERSION, DOMAIN
+from .const import CONF_VERSION
 from .coordinator import MyCloudCoordinator
 from .entity import (
     as_float,
@@ -34,9 +40,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the WD My Cloud sensors."""
-    coordinator: MyCloudCoordinator | None = hass.data.get(DOMAIN, {}).get(
-        config_entry.entry_id
-    )
+    coordinator: MyCloudCoordinator | None = config_entry.runtime_data
     if coordinator is None:
         return
 
@@ -45,13 +49,12 @@ async def async_setup_entry(
     system_info = data.get("system_info") or {}
 
     sensors: list[SensorEntity] = [
-        MyCloudCPUSensor(coordinator, device_info, serial_number, device_name),
-        MyCloudMemorySensor(coordinator, device_info, serial_number, device_name),
+        MyCloudCPUSensor(coordinator, device_info, serial_number),
+        MyCloudMemorySensor(coordinator, device_info, serial_number),
         MyCloudStorageSensor(
             coordinator,
             device_info,
             serial_number,
-            device_name,
             "total",
             "Total Storage",
             "mdi:database",
@@ -60,7 +63,6 @@ async def async_setup_entry(
             coordinator,
             device_info,
             serial_number,
-            device_name,
             "used",
             "Used Storage",
             "mdi:database-minus",
@@ -69,36 +71,31 @@ async def async_setup_entry(
             coordinator,
             device_info,
             serial_number,
-            device_name,
             "unused",
             "Unused Storage",
             "mdi:database-plus",
         ),
-        MyCloudAlertCountSensor(coordinator, device_info, serial_number, device_name),
-        MyCloudLatestAlertSensor(coordinator, device_info, serial_number, device_name),
+        MyCloudAlertCountSensor(coordinator, device_info, serial_number),
+        MyCloudLatestAlertSensor(coordinator, device_info, serial_number),
     ]
 
     if as_int(config_entry.data.get(CONF_VERSION)) == 5:
-        sensors.append(
-            MyCloudUptimeSensor(coordinator, device_info, serial_number, device_name)
-        )
+        sensors.append(MyCloudUptimeSensor(coordinator, device_info, serial_number))
 
     disks = system_info.get("disks") or []
     if isinstance(disks, list):
         for index, disk in enumerate(disks):
             if not isinstance(disk, dict):
                 continue
-            disk_device, key, disk_name = build_disk_info(
+            disk_device, key, _ = build_disk_info(
                 serial_number, device_name, firmware, disk, index
             )
             sensors.extend(
                 [
                     MyCloudDiskTemperatureSensor(
-                        coordinator, disk_device, serial_number, key, disk_name
+                        coordinator, disk_device, serial_number, key
                     ),
-                    MyCloudDiskSizeSensor(
-                        coordinator, disk_device, serial_number, key, disk_name
-                    ),
+                    MyCloudDiskSizeSensor(coordinator, disk_device, serial_number, key),
                 ]
             )
 
@@ -107,13 +104,11 @@ async def async_setup_entry(
         for index, volume in enumerate(volumes):
             if not isinstance(volume, dict):
                 continue
-            volume_device, key, volume_name = build_volume_info(
+            volume_device, key, _ = build_volume_info(
                 serial_number, device_name, volume, index
             )
             sensors.append(
-                MyCloudVolumeSizeSensor(
-                    coordinator, volume_device, serial_number, key, volume_name
-                )
+                MyCloudVolumeSizeSensor(coordinator, volume_device, serial_number, key)
             )
 
     async_add_entities(sensors)
@@ -122,6 +117,7 @@ async def async_setup_entry(
 class MyCloudSensorBase(CoordinatorEntity, SensorEntity):
     """Base class for My Cloud sensors."""
 
+    _attr_has_entity_name = True
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
@@ -151,14 +147,16 @@ class MyCloudSensorBase(CoordinatorEntity, SensorEntity):
 class MyCloudCPUSensor(MyCloudSensorBase):
     """CPU usage of the NAS."""
 
-    def __init__(self, coordinator, device_info, serial_number, device_name) -> None:
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_cpu_usage",
-            f"{device_name} CPU Usage",
-            unit="%",
+            "CPU Usage",
+            unit=PERCENTAGE,
             icon="mdi:cpu-64-bit",
         )
 
@@ -172,14 +170,16 @@ class MyCloudCPUSensor(MyCloudSensorBase):
 class MyCloudMemorySensor(MyCloudSensorBase):
     """Memory usage of the NAS."""
 
-    def __init__(self, coordinator, device_info, serial_number, device_name) -> None:
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_memory_usage",
-            f"{device_name} Memory Usage",
-            unit="%",
+            "Memory Usage",
+            unit=PERCENTAGE,
             icon="mdi:memory",
         )
 
@@ -203,7 +203,6 @@ class MyCloudStorageSensor(MyCloudSensorBase):
         coordinator,
         device_info,
         serial_number,
-        device_name,
         value_key,
         label,
         icon,
@@ -213,7 +212,7 @@ class MyCloudStorageSensor(MyCloudSensorBase):
             coordinator,
             device_info,
             f"{serial_number}_{value_key}_storage",
-            f"{device_name} {label}",
+            label,
             unit=UnitOfInformation.BYTES,
             device_class=SensorDeviceClass.DATA_SIZE,
             icon=icon,
@@ -232,13 +231,15 @@ class MyCloudStorageSensor(MyCloudSensorBase):
 class MyCloudAlertCountSensor(MyCloudSensorBase):
     """Number of entries in the NAS alert log."""
 
-    def __init__(self, coordinator, device_info, serial_number, device_name) -> None:
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_alert_count",
-            f"{device_name} Alert Count",
+            "Alert Count",
             icon="mdi:bell-badge-outline",
         )
 
@@ -258,15 +259,16 @@ class MyCloudAlertCountSensor(MyCloudSensorBase):
 class MyCloudLatestAlertSensor(MyCloudSensorBase):
     """Newest message in the NAS alert log."""
 
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_state_class = None
 
-    def __init__(self, coordinator, device_info, serial_number, device_name) -> None:
+    def __init__(self, coordinator, device_info, serial_number) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_latest_alert",
-            f"{device_name} Latest Alert",
+            "Latest Alert",
             icon="mdi:bell-alert-outline",
         )
 
@@ -302,13 +304,16 @@ class MyCloudLatestAlertSensor(MyCloudSensorBase):
 class MyCloudUptimeSensor(MyCloudSensorBase):
     """Uptime of the NAS (V5 only)."""
 
-    def __init__(self, coordinator, device_info, serial_number, device_name) -> None:
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, coordinator, device_info, serial_number) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_uptime",
-            f"{device_name} Uptime",
+            "Uptime",
             unit=UnitOfTime.SECONDS,
             device_class=SensorDeviceClass.DURATION,
             icon="mdi:timer-outline",
@@ -324,15 +329,13 @@ class MyCloudUptimeSensor(MyCloudSensorBase):
 class MyCloudDiskTemperatureSensor(MyCloudSensorBase):
     """Temperature of a physical disk."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, disk_key, disk_name
-    ) -> None:
+    def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_temp",
-            f"{disk_name} Temperature",
+            "Temperature",
             unit=UnitOfTemperature.CELSIUS,
             device_class=SensorDeviceClass.TEMPERATURE,
             icon="mdi:thermometer",
@@ -349,15 +352,13 @@ class MyCloudDiskTemperatureSensor(MyCloudSensorBase):
 class MyCloudDiskSizeSensor(MyCloudSensorBase):
     """Capacity of a physical disk."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, disk_key, disk_name
-    ) -> None:
+    def __init__(self, coordinator, device_info, serial_number, disk_key) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{disk_key}_disk_size",
-            f"{disk_name} Size",
+            "Size",
             unit=UnitOfInformation.BYTES,
             device_class=SensorDeviceClass.DATA_SIZE,
             icon="mdi:harddisk",
@@ -375,15 +376,13 @@ class MyCloudDiskSizeSensor(MyCloudSensorBase):
 class MyCloudVolumeSizeSensor(MyCloudSensorBase):
     """Size of a logical volume."""
 
-    def __init__(
-        self, coordinator, device_info, serial_number, volume_key, volume_name
-    ) -> None:
+    def __init__(self, coordinator, device_info, serial_number, volume_key) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
             device_info,
             f"{serial_number}_{volume_key}_volume_size",
-            f"{volume_name} Size",
+            "Size",
             unit=UnitOfInformation.BYTES,
             device_class=SensorDeviceClass.DATA_SIZE,
             icon="mdi:harddisk",

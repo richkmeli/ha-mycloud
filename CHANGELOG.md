@@ -7,12 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-14
+
+### Added
+
+- **Reconfigure** flow: the host, username, password and software version can be changed without deleting the entry. The new connection is validated first; the unique ID, title and entry data are updated, and the entry reloads.
+- **Disk Connected** and **Disk Removable** binary sensors.
+- Automatic reload when disks or volumes are added, removed or replaced, so entities for new hardware are created without a manual integration reload.
+- `configuration_url` on the main device, linking back to the NAS web interface.
+- A CI job that runs the test suite against the minimum supported Home Assistant version (`2025.8.0`).
+- The release workflow now checks that the manifest version matches the release tag.
+
 ### Changed
 
-- `main` is the only maintained branch. Development and releases no longer use `dev`.
+- The coordinator is stored in `entry.runtime_data` instead of `hass.data`. Setup, unload, platforms and diagnostics were updated; credentials are still never duplicated outside the config entry.
+- Entities use `has_entity_name` with English entity names. Existing entity IDs are preserved; new installations get cleaner IDs such as `sensor.<device>_disk_1_temperature`.
+- CPU, memory, uptime, alert, disk sleep, disk removable and volume unlock/encryption entities are marked as diagnostic.
+- The uptime sensor uses `TOTAL_INCREASING` instead of `MEASUREMENT`.
+- Release assets are built with `git archive` from `HEAD`, which excludes local and untracked files.
+- The README was rewritten in a text-only format aligned with Home Assistant conventions. Screenshots and CI badges were removed; upstream triage moved to `UPSTREAM.md`.
 - Added `CONTRIBUTING.md` with the branch policy, Conventional Commits and Semantic Versioning rules.
-- Documentation: the README was rewritten in a text-only format aligned with Home Assistant conventions. Screenshots and CI badges were removed; upstream triage moved to `UPSTREAM.md`.
+- `main` is the only maintained branch. Development and releases no longer use `dev`.
 - Removed the duplicate `images/` directory. Integration brand assets remain in `custom_components/mycloud/brand`.
+
+### Fixed
+
+- Optional endpoints now isolate `ParseError`, `AttributeError`, `KeyError`, `ValueError`, authentication and network errors, so malformed or unsupported responses do not make the core sensors unavailable. The firmware version endpoint is optional as well.
+- The coordinator reconnects when the session is missing **or** already closed.
+- The uptime fallback is also used on transport errors, not only on `RequestFailedError`.
+- Disk names no longer produce labels such as “Disk Disk 1”.
+- `SECURITY.md` now tracks security fixes against the latest release instead of a fixed minor series.
 
 ## [1.3.3] - 2026-11-14
 

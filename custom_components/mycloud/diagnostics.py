@@ -7,14 +7,14 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_PASSWORD, DOMAIN
+from .const import CONF_PASSWORD
 
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry with credentials redacted."""
-    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    coordinator = entry.runtime_data
     data = dict(entry.data)
     data[CONF_PASSWORD] = "**REDACTED**"
 

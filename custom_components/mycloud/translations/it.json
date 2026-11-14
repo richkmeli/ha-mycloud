@@ -17,6 +17,16 @@
         "data": {
           "Password": "Password"
         }
+      },
+      "reconfigure": {
+        "title": "Riconfigura WD My Cloud",
+        "description": "Aggiorna indirizzo, credenziali o versione software del NAS. La voce viene ricaricata dopo il salvataggio.",
+        "data": {
+          "Host": "Host",
+          "Username": "Nome utente",
+          "Password": "Password",
+          "Version": "Versione software"
+        }
       }
     },
     "error": {

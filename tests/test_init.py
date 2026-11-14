@@ -10,7 +10,6 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from wdnas_client.exceptions import InvalidLoginError
 
 from custom_components.mycloud import async_setup_entry, async_unload_entry
-from custom_components.mycloud.const import DOMAIN
 
 
 @pytest.fixture
@@ -39,8 +38,9 @@ async def test_setup_stores_only_coordinator(hass, config_entry):
         result = await async_setup_entry(hass, config_entry)
 
     assert result is True
-    assert hass.data[DOMAIN][config_entry.entry_id] is coordinator
-    assert "secret" not in repr(hass.data)
+    assert config_entry.runtime_data is coordinator
+    assert "secret" not in repr(config_entry.runtime_data)
+    assert hass.data == {}
     client.async_connect.assert_awaited_once()
     client_cls.assert_called_once_with("admin", "secret", "nas.local", 5)
     hass.config_entries.async_forward_entry_setups.assert_awaited_once()
@@ -55,7 +55,7 @@ async def test_setup_invalid_credentials_starts_reauth(hass, config_entry):
         with pytest.raises(ConfigEntryAuthFailed):
             await async_setup_entry(hass, config_entry)
 
-    assert DOMAIN not in hass.data
+    assert config_entry.runtime_data is None
 
 
 async def test_setup_connection_error_is_retried(hass, config_entry):
@@ -67,7 +67,7 @@ async def test_setup_connection_error_is_retried(hass, config_entry):
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, config_entry)
 
-    assert DOMAIN not in hass.data
+    assert config_entry.runtime_data is None
 
 
 async def test_setup_failure_closes_client(hass, config_entry):
@@ -87,27 +87,27 @@ async def test_setup_failure_closes_client(hass, config_entry):
             await async_setup_entry(hass, config_entry)
 
     coordinator.async_close.assert_awaited_once()
-    assert DOMAIN not in hass.data
+    assert config_entry.runtime_data is None
 
 
 async def test_unload_closes_client_and_removes_data(hass, config_entry):
     """Unload closes the session and drops the coordinator."""
     coordinator = MagicMock()
     coordinator.async_close = AsyncMock()
-    hass.data[DOMAIN] = {config_entry.entry_id: coordinator}
+    config_entry.runtime_data = coordinator
 
     assert await async_unload_entry(hass, config_entry) is True
     coordinator.async_close.assert_awaited_once()
-    assert DOMAIN not in hass.data
+    assert config_entry.runtime_data is None
 
 
 async def test_unload_failure_keeps_data(hass, config_entry):
     """A failed platform unload leaves the coordinator in place."""
     coordinator = MagicMock()
     coordinator.async_close = AsyncMock()
-    hass.data[DOMAIN] = {config_entry.entry_id: coordinator}
+    config_entry.runtime_data = coordinator
     hass.config_entries.async_unload_platforms.return_value = False
 
     assert await async_unload_entry(hass, config_entry) is False
     coordinator.async_close.assert_not_awaited()
-    assert hass.data[DOMAIN][config_entry.entry_id] is coordinator
+    assert config_entry.runtime_data is coordinator

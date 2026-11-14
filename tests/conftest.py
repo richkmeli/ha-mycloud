@@ -25,6 +25,8 @@ def nas_data() -> dict:
                     "sleep": 0,
                     "failed": 0,
                     "over_temp": 0,
+                    "connected": 1,
+                    "removable": 0,
                 }
             ],
             "volumes": [
@@ -98,6 +100,7 @@ def config_entry():
         "Version": 5,
     }
     entry.options = {}
+    entry.unique_id = "nas.local"
+    entry.runtime_data = None
     entry.async_on_unload = MagicMock()
-    entry.add_update_listener = MagicMock()
     return entry

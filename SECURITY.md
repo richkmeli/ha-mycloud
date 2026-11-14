@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are applied to the latest `1.3.x` release.
+Security fixes are applied to the latest release.
 
 ## Reporting a vulnerability
 
@@ -26,7 +26,7 @@ Include the affected version, a description, reproduction steps and any relevant
 ### Credentials and storage
 
 - The username and password are stored in the Home Assistant config entry, in `.storage/core.config_entries`, like every other Home Assistant integration. Protect the Home Assistant configuration directory accordingly.
-- The password is **not** copied into `hass.data`; only the coordinator is stored there.
+- The password is **not** copied into `hass.data`; the coordinator is kept in `entry.runtime_data` and owns the single client session.
 - The password is **not** written to logs.
 - Diagnostics redact the password before the file is generated.
 - Configuration uses a password input field, so the password is not shown on screen while typing.
@@ -60,7 +60,7 @@ Findings and resolutions:
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
 | F-01 | High (accepted upstream risk) | `wdnas-client` sends credentials over plain HTTP. | Documented; mitigations in README. Requires an upstream/client change for true TLS. |
-| F-02 | Medium | The setup copied the plaintext password into `hass.data`. | Fixed: only the coordinator is stored. |
+| F-02 | Medium | The setup copied the plaintext password into `hass.data`. | Fixed: only the coordinator is stored, now in `entry.runtime_data`. |
 | F-03 | Medium | The host field accepted arbitrary strings, including schemes and paths. | Fixed: strict validation and normalization. |
 | F-04 | Medium | The password field was a plain text input. | Fixed: password selector. |
 | F-05 | Medium | The config flow stored credentials without validating the connection or the device endpoints. | Fixed: login, `device_info` and `system_info` are checked before creating the entry. |

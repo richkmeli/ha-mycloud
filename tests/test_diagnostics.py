@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from custom_components.mycloud.const import DOMAIN
 from custom_components.mycloud.diagnostics import async_get_config_entry_diagnostics
 
 
 async def test_diagnostics_redacts_password(coordinator, config_entry):
     """The diagnostics payload never contains the password."""
+    config_entry.runtime_data = coordinator
     hass = MagicMock()
-    hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
 
     result = await async_get_config_entry_diagnostics(hass, config_entry)
 
