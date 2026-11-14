@@ -18,12 +18,22 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify manifest version matches release tag
+        run: |
+          version="$(python -c "import json; print(json.load(open('custom_components/mycloud/manifest.json'))['version'])")"
+          if [ "v${version}" != "${{ github.event.release.tag_name }}" ]; then
+            echo "ERROR: manifest version ${version} does not match tag ${{ github.event.release.tag_name }}" >&2
+            exit 1
+          fi
+
       # HACS extracts the release asset directly into custom_components/mycloud,
       # so the files must be at the ROOT of the zip (no enclosing "mycloud/").
       - name: Build HACS-compatible zip
         run: |
-          cd custom_components/mycloud
-          zip -r "$GITHUB_WORKSPACE/mycloud.zip" .
+          git archive \
+            --format=zip \
+            --output="$GITHUB_WORKSPACE/mycloud.zip" \
+            HEAD:custom_components/mycloud
 
       - name: Verify HACS-compatible layout
         run: |

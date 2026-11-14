@@ -38,6 +38,29 @@ jobs:
       - name: Run tests
         run: pytest
 
+  min-ha:
+    name: Tests (Home Assistant 2025.8.0)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt "homeassistant==2025.8.0"
+
+      - name: Run tests
+        run: pytest
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -77,8 +100,10 @@ jobs:
       # integration files must be at the root of the ZIP.
       - name: Create release zip
         run: |
-          cd custom_components/mycloud
-          zip -r "$GITHUB_WORKSPACE/mycloud.zip" .
+          git archive \
+            --format=zip \
+            --output="$GITHUB_WORKSPACE/mycloud.zip" \
+            HEAD:custom_components/mycloud
 
       - name: Verify HACS-compatible layout
         run: |
