@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-14
+
+### Added
+
+- Entity name and icon translations through `translation_key` and `icons.json`. Existing entity IDs are preserved, and names are available in English and Italian.
+- Exception translations for setup, re-authentication, reconnection and data-fetch failures, with host and error placeholders.
+- `data_description` for every config, reconfigure, reauth and options field.
+- `serial_number` on the main NAS and disk devices when the NAS reports it.
+- `async_remove_config_entry_device`, so disks and volumes that no longer exist can be removed from their device page without touching the main NAS device.
+- Per-module coverage enforcement (`>95%` for every module) in CI, with `scripts/check_coverage.py`.
+- Tests for unique ID migration, stale device removal, translated exceptions, alert fallbacks and all config/reconfigure error paths.
+
+### Changed
+
+- The config entry unique ID is now the NAS serial number instead of the host. Existing entries are migrated automatically during setup, with guards for missing or duplicate serial numbers.
+- Reconfigure validates the NAS serial number and aborts with `wrong_device` when the address points to a different device.
+- `BinarySensorDeviceClass.PROBLEM` is used for disk failure and over-temperature, and `CONNECTIVITY` for disk presence.
+- `PARALLEL_UPDATES = 0` is declared on both entity platforms because the shared coordinator serializes polling.
+- Entity icons are defined in `icons.json` instead of Python attributes.
+
+### Fixed
+
+- Blank disk or volume identifiers no longer produce empty device identifiers.
+- The reconfigure flow stores the serial number and updates the title and unique ID consistently.
+- Diagnostics tolerate an entry that is not loaded and report the entry title and unique ID.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added
