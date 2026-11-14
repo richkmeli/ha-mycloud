@@ -28,7 +28,7 @@ Examples:
 feat(sensor): add alert count and latest alert
 fix(coordinator): reconnect once after a 403 response
 docs: clarify the single admin session limitation
-chore(release): v1.3.4
+chore(release): 1.4.1
 ```
 
 - Use an optional scope in parentheses when it helps: `fix(client): ...`.
@@ -65,8 +65,8 @@ Entity IDs and unique IDs are part of the public interface. Changing them can br
    pytest
    ```
 
-4. Commit the release bookkeeping with `chore(release): vX.Y.Z`.
+4. Commit the release bookkeeping with `chore(release): X.Y.Z`.
 5. Create the tag `vX.Y.Z` from `main` and publish a GitHub release targeting `main`.
-6. Verify that the release asset `mycloud.zip` contains `manifest.json` at the root and that its version matches the release.
+6. Verify that the release workflow succeeded and that the release asset `mycloud.zip` contains `manifest.json` at the root with a version matching the release tag.
 
 HACS installs the integration from the release asset, so the ZIP layout is part of the release contract.
