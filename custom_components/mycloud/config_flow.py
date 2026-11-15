@@ -40,6 +40,16 @@ _LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _HOSTNAME_RE = re.compile(rf"(?:{_LABEL}\.)*{_LABEL}", re.IGNORECASE)
 
 
+def _schema(schema: dict[Any, Any]) -> Any:
+    """Return a form schema accepted by every supported HA release.
+
+    Home Assistant 2026.11 annotates form schemas with probatio, while the
+    minimum supported release uses voluptuous. Both accept voluptuous schemas
+    at runtime.
+    """
+    return vol.Schema(schema)
+
+
 def normalize_host(value: str) -> str:
     """Validate and normalize a NAS host.
 
@@ -180,7 +190,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
+            data_schema=_schema(
                 {
                     vol.Required(CONF_HOST): TextSelector(
                         TextSelectorConfig(type=TextSelectorType.TEXT)
@@ -255,7 +265,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=vol.Schema(
+            data_schema=_schema(
                 {
                     vol.Required(CONF_PASSWORD): TextSelector(
                         TextSelectorConfig(type=TextSelectorType.PASSWORD)
@@ -357,7 +367,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=vol.Schema(
+            data_schema=_schema(
                 {
                     vol.Required(
                         CONF_HOST, default=entry.data.get(CONF_HOST)
@@ -393,7 +403,7 @@ class MyCloudOptionsFlow(config_entries.OptionsFlowWithReload):
         )
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
+            data_schema=_schema(
                 {
                     vol.Optional(
                         CONF_UPDATE_INTERVAL,
