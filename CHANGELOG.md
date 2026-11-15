@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-11-15
+
+### Added
+
+- Dedicated `admin_session_busy` error when another admin session is active on the NAS. Setup retries with backoff and the coordinator retries after five minutes, instead of asking for the password again.
+- Contract tests against a local fake OS5 NAS covering the single admin session, the path-scoped `PHPSESSID` cookie and the server-side logout.
+- `mypy` type checking in CI.
+
+### Changed
+
+- The NAS parser now tolerates missing disk and volume IDs, textual or unexpected boolean flags and non-numeric fields. A partial payload no longer makes every core sensor unavailable.
+- A malformed core response, for example a login HTML page instead of XML, triggers one reconnect and retry before reporting a failure.
+
+### Fixed
+
+- Share list responses without an `item` list are treated as empty instead of failing the endpoint.
+
 ## [3.0.1] - 2026-11-15
 
 ### Fixed
