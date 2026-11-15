@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.0.6] - 2026-11-15
+
+### Added
+
+- `scripts/ssh_recover.py`, an optional standalone SSH recovery helper for a stale `nasAdmin` admin session. It runs a fixed read-only discovery report by default and can restart only the allowlisted `nasadmin`, `php-fpm`, `apache` and `restsdk` services after an exact `--confirm` value. It uses strict host-key verification, never stores credentials and is not part of the integration or the HACS archive.
+
+### Fixed
+
+- Login failures now parse the OS5 JSON response body. The firmware returns `{"error": "-3"}` for a temporary account lock and `{"error": "5"}` when another admin session is active; both were previously reported as generic HTTP failures. Integer and string forms are accepted, and the JSON code takes precedence over localized text in other fields.
 
 ## [3.0.5] - 2026-11-15
 

@@ -129,8 +129,33 @@ def _is_account_locked(body: str) -> bool:
     return _LOGIN_LOCKED_RE.search(body) is not None
 
 
+def _login_error_code(body: str) -> str | None:
+    """Return the numeric ``error`` field from a JSON login response.
+
+    OS5 normally answers a rejected login with
+    ``{"error": "-3", "eula_status": "..."}`` instead of a textual message.
+    The field is documented as a string but some firmware revisions send a
+    number, so both forms are accepted.
+    """
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    code = payload.get("error")
+    if isinstance(code, bool) or not isinstance(code, (int, str)):
+        return None
+    return str(code).strip() or None
+
+
 def _login_error(body: str) -> InvalidLoginError | None:
     """Return the specific login error described by a NAS response."""
+    code = _login_error_code(body)
+    if code == "-3":
+        return AccountLockedError(_login_message(body))
+    if code == "5":
+        return AdminSessionBusyError(_login_message(body))
     if _is_account_locked(body):
         return AccountLockedError(_login_message(body))
     if _is_admin_session_busy(body):

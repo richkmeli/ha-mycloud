@@ -456,6 +456,78 @@ async def test_account_block_wins_over_a_busy_session_hint(client):
         await client.login()
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"error": "-3", "eula_status": "0"}',
+        '{"error": -3, "eula_status": "0"}',
+        '{"error": " -3 "}',
+    ],
+)
+@pytest.mark.parametrize("status", [200, 403])
+async def test_login_detects_json_account_locked_code(client, body, status):
+    """The OS5 ``-3`` error code is an account lock, not a wrong password."""
+    client.session = _FakeSession(_FakeResponse(status, text=body))
+
+    with pytest.raises(AccountLockedError) as err:
+        await client.login()
+
+    assert isinstance(err.value, InvalidLoginError)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"error": "5", "eula_status": "3"}',
+        '{"error": 5, "eula_status": "3"}',
+    ],
+)
+@pytest.mark.parametrize("status", [200, 403])
+async def test_login_detects_json_busy_code(client, body, status):
+    """The OS5 ``5`` error code means another admin session is active."""
+    client.session = _FakeSession(_FakeResponse(status, text=body))
+
+    with pytest.raises(AdminSessionBusyError) as err:
+        await client.login()
+
+    assert isinstance(err.value, InvalidLoginError)
+
+
+async def test_json_error_code_wins_over_text_matches(client):
+    """A JSON error code is authoritative even if other fields echo words."""
+    client.session = _FakeSession(
+        _FakeResponse(
+            403,
+            text='{"error": "5", "eula_status": "account locked"}',
+        )
+    )
+
+    with pytest.raises(AdminSessionBusyError):
+        await client.login()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '["-3"]',
+        '{"error": null}',
+        '{"error": true}',
+        '{"error": ""}',
+        '{"error": 5.5}',
+        '{"error": "-1"}',
+        '{"error": "0"}',
+    ],
+)
+async def test_login_ignores_unsupported_json_error_values(client, body):
+    """Unknown or non-numeric JSON error values are not misclassified."""
+    client.session = _FakeSession(_FakeResponse(403, text=body))
+
+    with pytest.raises(RequestFailedError) as err:
+        await client.login()
+
+    assert err.value.status_code == 403
+
+
 async def test_login_recovers_a_cookie_set_on_a_redirect(client):
     """A cookie set by an intermediate redirect authenticates the session."""
     redirect = _FakeResponse(

@@ -24,6 +24,7 @@ Include the affected version, a description, reproduction steps and any relevant
 - The V5 uptime fallback (`cgi_get_status`) is a second command on the same NAS status endpoint. It is used only after the dedicated uptime command fails and still applies the same host, session and timeout rules.
 - The account, cloud-access and USB payloads may contain personal or unvalidated data. Their sensors are created disabled in the entity registry and are never enabled automatically.
 - Restart and shutdown buttons are always created for OS5 entries. Restart is enabled by default; Shutdown is disabled until the user enables it in the entity registry. Every action first runs the NAS dashboard's read-only `cgi_Detect_Dangerous` safety check; a non-zero result blocks the action. The command is sent once over the existing authenticated session and is never retried, because an unanswered request may already have powered the device off. The integration does not use SSH or a second connection for power actions.
+- The optional `scripts/ssh_recover.py` helper is **not** part of the integration, is never imported at runtime and is not shipped in the HACS archive. It is a manual recovery tool for a stale `nasAdmin` session. It uses the system OpenSSH client with strict host-key verification, runs a fixed read-only discovery report by default and can only restart the allowlisted `nasadmin`, `php-fpm`, `apache` and `restsdk` services after an exact `--confirm` value. It has no arbitrary command option and no reboot, shutdown or power action.
 
 ### Credentials and storage
 
@@ -32,6 +33,7 @@ Include the affected version, a description, reproduction steps and any relevant
 - The password is **not** written to logs.
 - Diagnostics redact the password, account lists, cloud-access payload and USB payload before the file is generated.
 - Configuration uses a password input field, so the password is not shown on screen while typing.
+- The integration never stores SSH credentials. When the optional recovery helper is used, the SSH password is prompted without echo or read from `MYCLOUD_SSH_PASSWORD`; in the environment-variable case it is passed to `sshpass` through `SSHPASS`, never on the command line, and it is not written to disk.
 
 ### Known protocols and residual risk
 
@@ -39,6 +41,7 @@ Include the affected version, a description, reproduction steps and any relevant
 2. **Admin account.** The integration needs an admin account. WD firmware allows the admin account to be active in only one place at a time. A compromised Home Assistant host therefore exposes the NAS admin password. Harden the Home Assistant host and restrict access to its configuration.
 3. **NAS firmware.** The integration trusts the XML/JSON returned by the NAS. A malicious or compromised NAS can return malformed data; the integration validates types and reports unavailable entities instead of crashing, but it cannot protect the NAS from itself. Alert messages, account details, cloud-access data and USB payloads are treated as opaque data, exposed only as sensor states/attributes and never rendered as HTML or executed. The account, cloud-access and USB sensors are disabled by default.
 4. **Vendored client.** The OS5 protocol client is vendored from `wdnas-client` 0.9.4 (MIT License) and has no external runtime dependency. The source distribution was audited before vendoring: it only uses `aiohttp`, has no install hooks, no telemetry, no shell execution and no endpoint other than the configured host. The upstream copyright and license are preserved in `custom_components/mycloud/THIRD_PARTY_NOTICES.md`; local changes are listed in that file and in `UPSTREAM.md`.
+5. **Optional SSH recovery.** Enabling SSH on the NAS exposes port 22 and gives the `sshd` account root-equivalent access. Keep SSH disabled when it is not needed, restrict it to the trusted LAN, use a unique password or a key and verify the host fingerprint before trusting it. The recovery helper refuses unknown host keys and does not store credentials.
 
 ## Audit — 2026-11-14
 
@@ -84,6 +87,7 @@ No backdoor, hidden endpoint, credential exfiltration, obfuscated payload, insta
 - [ ] Home Assistant and the NAS are on a trusted VLAN or network.
 - [ ] The NAS web interface is not exposed to the internet.
 - [ ] The NAS admin password is unique and stored in a password manager.
+- [ ] SSH is disabled on the NAS unless it is needed for recovery, and uses a unique password or a key.
 - [ ] Home Assistant configuration backups are encrypted.
 - [ ] The NAS firmware is up to date.
 - [ ] Only trusted people can access the Home Assistant UI and configuration.

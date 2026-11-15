@@ -190,9 +190,12 @@ allows only one active admin session, so the same message appears when:
 Starting with 3.0.1 the integration releases its server-side session with
 `DELETE /nas/v1/auth` on unload, reconfigure and re-authentication. It also
 reports the busy response with a dedicated `admin_session_busy` error and
-retries later, instead of asking for the password again. Starting with 3.0.3
-the login also accepts a `PHPSESSID` cookie set by a redirect and ignores a
-malformed `Set-Cookie` header instead of reporting the password as wrong.
+retries later, instead of asking for the password again. Starting with 3.0.6
+the integration reads the OS5 JSON error code directly, so `{"error": "5"}` is
+reported as a busy admin session even when the body contains no localized text.
+Starting with 3.0.3 the login also accepts a `PHPSESSID` cookie set by a
+redirect and ignores a malformed `Set-Cookie` header instead of reporting the
+password as wrong.
 Update the integration before troubleshooting the NAS.
 
 If the NAS still reports the account as in use:
@@ -203,14 +206,16 @@ If the NAS still reports the account as in use:
 3. Wait at least 30-60 minutes without any login attempt. Repeated attempts
    renew the NAS session timeout.
 4. Re-enable the entry and retry. If the NAS remains locked, restart it once;
-   a reboot releases the stale admin sessions.
+   a reboot releases the stale admin sessions. If SSH is enabled, the narrower
+   `nasAdmin` restart described below clears the same in-memory session without
+   rebooting the whole NAS.
 
 ### `account_locked`
 
 The NAS temporarily blocks the admin account or the client IP after several
-consecutive failed logins. This is not a wrong password. The integration
-reports `account_locked` and retries later instead of opening re-authentication
-or continuing to submit the password.
+consecutive failed logins. This is not a wrong password. The firmware reports
+JSON error `-3`; the integration reports `account_locked` and retries later
+instead of opening re-authentication or continuing to submit the password.
 
 1. Stop trying to log in for at least 30-60 minutes. WD documents IP blocks
    that can last 1-2 hours, and every new attempt can extend the block.
@@ -239,6 +244,53 @@ secrets redacted. `MYCLOUD_HOST`, `MYCLOUD_USERNAME` and `MYCLOUD_PASSWORD` can
 replace the prompts. The script is not imported by the integration and is not a
 runtime dependency. Close the NAS web interface first, and do not run it while
 an `account_locked` block is active.
+
+### Recover a stale admin session over SSH (optional)
+
+OS5 keeps the admin login record and its rate limiter in the `nasAdmin`
+process. Restarting that process clears both without rebooting the NAS. This is
+an optional manual recovery path: the integration never uses SSH, never imports
+this script and never stores SSH credentials.
+
+SSH is disabled by default on OS5. Enable it in **Settings → Network → SSH**
+and set an SSH password in the same dialog. The firmware's `sshd_config` allows
+only the `sshd` account, which is uid 0. Use that account, not the web admin
+name.
+
+First run the read-only discovery from a clone of this repository:
+
+```bash
+python3 scripts/ssh_recover.py --host 192.168.1.10
+```
+
+The script uses the system OpenSSH client with `StrictHostKeyChecking=yes` and
+your `~/.ssh/known_hosts`. It refuses to connect when the NAS host key is not
+already trusted. Verify the fingerprint out of band, add it to `known_hosts`
+and run again. The report shows the OS5 processes, listening ports, service
+scripts, admin account flags and block-list files; it does not print password
+hashes or log contents.
+
+If the discovery confirms `nasAdmin` is running but the login remains stuck,
+restart it:
+
+```bash
+python3 scripts/ssh_recover.py --host 192.168.1.10 \
+    --action nasadmin --confirm nasadmin
+```
+
+Restarting `nasAdmin` clears the in-memory `loginRecord` and rate limiter. It
+also restarts `restsdk` and `otaclient` when they are running, so the NAS web
+services may be unavailable for a short time. It does not clear `/etc/blockip`,
+an `/etc/shadow` account lock or a network-level block, and it does not reboot
+or power off the NAS. Use `--dry-run` to inspect the exact SSH command, or
+`--list-actions` to see the fixed allowlist (`nasadmin`, `php-fpm`, `apache`,
+`restsdk`). Every action requires an exact `--confirm` value.
+
+The script prompts for the SSH password without echoing it. For a
+non-interactive run, set `MYCLOUD_SSH_PASSWORD` and install `sshpass`; the
+password is passed to `sshpass` through its environment, never on the command
+line. Alternatively, select a key with `--identity`. The script does not save
+credentials to disk.
 
 ### `invalid_host`
 
