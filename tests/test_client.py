@@ -296,6 +296,21 @@ async def test_uptime_from_status_uses_configured_host():
     ]
 
 
+async def test_uptime_from_status_omits_origin_headers():
+    """The status fallback must not send Origin/Referer/X-Requested-With."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = _RecordingSession(
+        [_FakeResponse(200, "<uptime>1 day 2 hours 3 minutes</uptime>")]
+    )
+    client.session = session
+
+    assert await client._async_uptime_from_status() == 93_780
+    _, _, headers = session.calls[0]
+    assert "Origin" not in headers
+    assert "Referer" not in headers
+    assert "X-Requested-With" not in headers
+
+
 async def test_uptime_from_status_returns_none_on_error():
     """A failed status request or missing uptime does not raise."""
     client = MyCloudClient("admin", "secret", "nas.local")

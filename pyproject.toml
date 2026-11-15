@@ -4,6 +4,8 @@ files = ["custom_components/mycloud"]
 check_untyped_defs = true
 ignore_missing_imports = true
 show_error_codes = true
+warn_return_any = true
+warn_unused_ignores = true
 
 [tool.ruff]
 target-version = "py313"

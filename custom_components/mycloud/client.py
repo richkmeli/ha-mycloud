@@ -103,9 +103,15 @@ class MyCloudClient(WDNASClient):
             return await self._async_uptime_from_status()
 
     async def _async_uptime_from_status(self) -> int | None:
-        """Read uptime from ``cgi_get_status`` when the dedicated call fails."""
+        """Read uptime from ``cgi_get_status`` when the dedicated call fails.
+
+        The status endpoint is a legacy CGI under ``/cgi-bin/`` and must not
+        send the Origin/Referer/X-Requested-With headers.
+        """
         try:
-            text = await self._post_text("uptime", "cmd=cgi_get_status", form=True)
+            text = await self._post_text(
+                "uptime", "cmd=cgi_get_status", form=True, origin=False
+            )
         except (
             RequestFailedError,
             aiohttp.ClientError,

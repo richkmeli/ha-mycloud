@@ -85,6 +85,18 @@ Power controls are normal entities, not an option. They are created on the NAS d
 
 The integration asks the NAS to run its own safety check before either action; if the NAS is busy (for example during a RAID rebuild or firmware update), the action is refused. The command is sent once and never retried. Shutdown does not power the NAS back on: use Wake-on-LAN or physical access to start it again. Test the Shutdown button once while you can physically power the NAS back on, before relying on it in a UPS automation.
 
+Restart and Shutdown use the legacy CGI endpoints under ``/cgi-bin/``. If either button fails with ``Azione di alimentazione non riuscita: Request failed: 403``:
+
+1. Close the NAS web interface in every browser tab and close all WD apps (WD My Cloud, WD Discovery). OS5 allows only one active admin session.
+2. Wait 2-3 minutes, then try once more.
+3. If it still fails, run the standalone diagnostic from a computer that can reach the NAS:
+
+```bash
+python scripts/diagnose_power.py --host 192.168.1.10:8543 --https --username admin
+```
+
+It tests the safety-check endpoint without sending a shutdown or restart command.
+
 ## Entities
 
 Entity IDs depend on the device name. The examples below use `wd_my_cloud`; your installation may use a different prefix.

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.4] - 2026-11-16
+
+### Fixed
+
+- The legacy CGI endpoints `/cgi-bin/status_mgr.cgi` (system status) and
+  `/cgi-bin/status_mgr.cgi` (uptime) no longer send `Origin`/`Referer`/
+  `X-Requested-With`. These endpoints predate CORS and reject those headers,
+  just like the power-action CGI endpoints fixed in 3.1.3.
+
+### Added
+
+- New standalone diagnostic script `scripts/diagnose_power.py` that tests the
+  power-action safety endpoint (`POST /cgi-bin/hd_config.cgi` with
+  `cmd=cgi_Detect_Dangerous`) without sending a shutdown or restart command.
+  It reports whether the NAS accepts the request or returns HTTP 403, helping
+  to distinguish a rejected safety check from a refused power action.
+- README documents the 403 failure on Restart/Shutdown buttons, how to use
+  `diagnose_power.py`, and how to enable debug logging for troubleshooting.
+
+### Changed
+
+- mypy now runs with `warn_return_any` and `warn_unused_ignores` enabled.
+- `cloud_access()` and `usb_info()` use `typing.cast` for the JSON payload
+  return type, satisfying the stricter mypy settings.
+
 ## [3.1.3] - 2026-11-16
 
 ### Fixed

@@ -1370,6 +1370,27 @@ async def test_uptime_rejects_an_unknown_format(client):
     assert str(err.value) == "Request failed: Unexpected uptime format: soon"
 
 
+async def test_legacy_cgi_endpoints_omit_origin_headers(client):
+    """Status and uptime calls to /cgi-bin/ must not send Origin/Referer headers."""
+    client.session = _FakeSession(_FakeResponse(text=UPTIME_XML))
+
+    await client.uptime()
+
+    headers = client.session.calls[0][2]["headers"]
+    assert "Origin" not in headers
+    assert "Referer" not in headers
+    assert "X-Requested-With" not in headers
+
+    client.session = _FakeSession(_FakeResponse(text=SYSTEM_STATUS_XML))
+
+    await client.system_status()
+
+    headers = client.session.calls[0][2]["headers"]
+    assert "Origin" not in headers
+    assert "Referer" not in headers
+    assert "X-Requested-With" not in headers
+
+
 async def test_transport_errors_propagate_to_the_caller(client):
     """aiohttp errors are not wrapped, so the coordinator can classify them."""
     client.session = _FakeSession(_FakeResponse(error=aiohttp.ClientError("offline")))

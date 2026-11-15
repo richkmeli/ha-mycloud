@@ -17,7 +17,7 @@ import http.cookies
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, cast
 from xml.etree.ElementTree import Element, ParseError, fromstring
 
 import aiohttp
@@ -371,24 +371,39 @@ class WDNASClient:
         )
         raise RequestFailedError(response.status)
 
-    async def _get_text(self, endpoint: str) -> str:
-        """Perform an authenticated GET and return the response body."""
+    async def _get_text(self, endpoint: str, *, origin: bool = True) -> str:
+        """Perform an authenticated GET and return the response body.
+
+        Legacy CGI endpoints under ``/cgi-bin/`` predate CORS and reject the
+        ``Origin``/``Referer``/``X-Requested-With`` headers, so callers can
+        disable them with ``origin=False``.
+        """
         session = self._require_session()
         async with session.get(
-            self._url(endpoint), headers=self._headers()
+            self._url(endpoint), headers=self._headers(origin=origin)
         ) as response:
             await self._raise_for_status(endpoint, response)
             return await response.text()
 
     async def _post_text(
-        self, endpoint: str, data: str | None = None, *, form: bool = False
+        self,
+        endpoint: str,
+        data: str | None = None,
+        *,
+        form: bool = False,
+        origin: bool = True,
     ) -> str:
-        """Perform an authenticated POST and return the response body."""
+        """Perform an authenticated POST and return the response body.
+
+        Legacy CGI endpoints under ``/cgi-bin/`` predate CORS and reject the
+        ``Origin``/``Referer``/``X-Requested-With`` headers, so callers can
+        disable them with ``origin=False``.
+        """
         session = self._require_session()
         async with session.post(
             self._url(endpoint),
             data=data,
-            headers=self._headers(form=form),
+            headers=self._headers(form=form, origin=origin),
         ) as response:
             await self._raise_for_status(endpoint, response)
             return await response.text()
@@ -560,9 +575,16 @@ class WDNASClient:
         return [item for item in items if isinstance(item, dict)]
 
     async def system_status(self) -> dict[str, Any]:
-        """Return CPU and memory usage."""
+        """Return CPU and memory usage.
+
+        The status endpoint is a legacy CGI under ``/cgi-bin/`` and must not
+        send the Origin/Referer/X-Requested-With headers that nasAdmin
+        requires on /nas/v1/auth.
+        """
         root = _parse_xml(
-            await self._post_text("system_status", "cmd=resource", form=True)
+            await self._post_text(
+                "system_status", "cmd=resource", form=True, origin=False
+            )
         )
         cpu = root.findtext(".//cpu")
         return {
@@ -677,17 +699,23 @@ class WDNASClient:
 
     async def cloud_access(self) -> dict[str, Any]:
         """Return the cloud-access payload."""
-        return json.loads(
-            await self._post_text("cloud_access", "cmd=getCloudAccess", form=True)
-        )
+        payload = await self._post_text("cloud_access", "cmd=getCloudAccess", form=True)
+        return cast(dict[str, Any], json.loads(payload))
 
     async def usb_info(self) -> dict[str, Any]:
         """Return the connected USB payload."""
-        return json.loads(await self._post_text("usb_info"))
+        return cast(dict[str, Any], json.loads(await self._post_text("usb_info")))
 
     async def uptime(self) -> int:
-        """Return the NAS uptime in seconds."""
-        text = await self._post_text("uptime", "cmd=cgi_get_uptime", form=True)
+        """Return the NAS uptime in seconds.
+
+        The uptime endpoint is a legacy CGI under ``/cgi-bin/`` and must not
+        send the Origin/Referer/X-Requested-With headers that nasAdmin
+        requires on /nas/v1/auth.
+        """
+        text = await self._post_text(
+            "uptime", "cmd=cgi_get_uptime", form=True, origin=False
+        )
         match = _UPTIME_ELEMENT_RE.search(text)
         if match is None:
             raise RequestFailedError("Uptime not found in XML response")
