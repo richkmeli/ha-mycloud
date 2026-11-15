@@ -228,16 +228,17 @@ diagnostic from a clone of this repository, on a computer that can reach the
 NAS:
 
 ```bash
+python3 -m pip install aiohttp
 python scripts/diagnose_login.py --host 192.168.1.10 --username admin
 ```
 
-The script prompts for the password without echoing it, performs exactly one
-login attempt and prints the status, redirect chain, cookie names and
-attributes (values redacted) and the response body with secrets redacted.
-`MYCLOUD_HOST`, `MYCLOUD_USERNAME` and `MYCLOUD_PASSWORD` can replace the
-prompts. The script is not imported by the integration and is not a runtime
-dependency. Close the NAS web interface first, and do not run it while an
-`account_locked` block is active.
+The script needs Python 3 and `aiohttp`. It prompts for the password without
+echoing it, performs exactly one login attempt and prints the status, redirect
+chain, cookie names and attributes (values redacted) and the response body with
+secrets redacted. `MYCLOUD_HOST`, `MYCLOUD_USERNAME` and `MYCLOUD_PASSWORD` can
+replace the prompts. The script is not imported by the integration and is not a
+runtime dependency. Close the NAS web interface first, and do not run it while
+an `account_locked` block is active.
 
 ### `invalid_host`
 
