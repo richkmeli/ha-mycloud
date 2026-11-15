@@ -7,12 +7,14 @@
         "data": {
           "Host": "Host",
           "Username": "Username",
-          "Password": "Password"
+          "Password": "Password",
+          "https": "Use HTTPS"
         },
         "data_description": {
           "Host": "IP address or hostname, optionally with a port. Do not include http:// or https://.",
           "Username": "Admin account used to sign in to the NAS.",
-          "Password": "Password for the admin account. WD firmware allows only one active admin session."
+          "Password": "Password for the admin account. WD firmware allows only one active admin session.",
+          "https": "Enable if the NAS web interface uses https://, for example on port 8543. The WD self-signed certificate is not verified."
         }
       },
       "reauth_confirm": {
@@ -31,12 +33,14 @@
         "data": {
           "Host": "Host",
           "Username": "Username",
-          "Password": "Password"
+          "Password": "Password",
+          "https": "Use HTTPS"
         },
         "data_description": {
           "Host": "IP address or hostname, optionally with a port. Do not include http:// or https://.",
           "Username": "Admin account used to sign in to the NAS.",
-          "Password": "Password for the admin account."
+          "Password": "Password for the admin account.",
+          "https": "Enable if the NAS web interface uses https://, for example on port 8543. The WD self-signed certificate is not verified."
         }
       }
     },

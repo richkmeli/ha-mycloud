@@ -26,6 +26,7 @@ from yarl import URL
 _LOGGER = logging.getLogger(__name__)
 
 SCHEME = "http://"
+HTTPS_SCHEME = "https://"
 
 ENDPOINTS = {
     "login": "/nas/v1/auth",
@@ -295,11 +296,20 @@ class WDNASClient:
     # only implements the OS5 protocol.
     version = 5
 
-    def __init__(self, username: str, password: str, host: str) -> None:
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        host: str,
+        *,
+        use_https: bool = False,
+    ) -> None:
         """Initialize an OS5 client for the configured NAS."""
         self.host = host
         self.username = username.lower()
         self.password = password
+        self.use_https = use_https
+        self.scheme = HTTPS_SCHEME if use_https else SCHEME
         self.session: aiohttp.ClientSession | None = None
         # Kept for compatibility with the vendored upstream API. It holds the
         # value of the cookie that authenticated the current session, which is
@@ -308,7 +318,7 @@ class WDNASClient:
 
     def _url(self, endpoint: str) -> str:
         """Build an API URL from the configured host and a fixed path."""
-        return f"{SCHEME}{self.host}{ENDPOINTS[endpoint]}"
+        return f"{self.scheme}{self.host}{ENDPOINTS[endpoint]}"
 
     def _require_session(self) -> aiohttp.ClientSession:
         """Return the authenticated session or raise a clear error."""
@@ -369,7 +379,7 @@ class WDNASClient:
         encoded_password = base64.b64encode(self.password.encode("utf-8")).decode(
             "utf-8"
         )
-        origin = f"{SCHEME}{self.host}"
+        origin = f"{self.scheme}{self.host}"
         # Match the NAS web interface. Some firmware revisions validate the
         # request origin or reject a request that does not look like the XHR
         # sent by the dashboard.
@@ -679,6 +689,7 @@ class WDNASClient:
 
 __all__ = [
     "ENDPOINTS",
+    "HTTPS_SCHEME",
     "SCHEME",
     "AccountLockedError",
     "AdminSessionBusyError",

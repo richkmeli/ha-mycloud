@@ -7,6 +7,7 @@ This is a community fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-myclo
 ## Features
 
 - **Local polling only** — no cloud service, telemetry or third-party endpoint.
+- **HTTP and HTTPS** — an explicit HTTPS option for OS5 firmware that serves the web interface only over TLS, including the common port 8543 setup.
 - **System status** — CPU and memory usage, including the raw memory fields.
 - **Device information** — serial number, name, model, firmware version and OLED text.
 - **Disks** — temperature, size, health, sleep, failure, over-temperature, connected, removable and hardware details.
@@ -35,9 +36,11 @@ This is a community fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-myclo
 - Home Assistant 2026.8.0 or newer. Integration 2.0.0 and newer use `via_device_id` and do not load on Home Assistant 2025.8–2026.7; users on those versions must stay on integration 1.5.0.
 - A WD My Cloud NAS running firmware OS5 (v5). OS2 is no longer supported; entries created for OS2 stop during setup with a clear error.
 - An admin account on the NAS.
-- The NAS web interface reachable from Home Assistant.
+- The NAS web interface reachable from Home Assistant, over HTTP or HTTPS.
 
 WD firmware allows only one active admin session at a time. Close the NAS web interface before using the same admin account in Home Assistant.
+
+OS5 often serves the web interface over HTTPS on port 8543. Use the same scheme and port in the integration: include the port in the host and enable **Use HTTPS**.
 
 ## Installation
 
@@ -60,15 +63,16 @@ This fork is not in the default HACS store. Add it as a custom repository:
 1. Go to **Settings → Devices & services → Add integration**.
 2. Search for **WD My Cloud**.
 3. Enter the connection details:
-   - **Host** — IP address or hostname of the NAS, optionally with a port. Examples: `192.168.1.10`, `wdmycloud.local`, `nas.local:8080`. Do not include `http://`, `https://`, a path or credentials.
+   - **Host** — IP address or hostname of the NAS, optionally with a port. Examples: `192.168.1.10`, `wdmycloud.local`, `nas.local:8080`, `192.168.1.10:8543`. Do not include `http://`, `https://`, a path or credentials.
    - **Username** and **Password** — credentials of an admin account.
+   - **Use HTTPS** — enable when the NAS web interface uses `https://`, for example on port 8543. The WD self-signed certificate is accepted without certificate verification.
 4. The integration logs in, reads the device information and creates the entry only if the NAS responds correctly. The NAS serial number becomes the entry identity, so changing the host later does not create a duplicate entry.
 
-The host field is validated. Schemes, paths, query strings, fragments and `user:password@host` values are rejected.
+The host field is validated. Schemes, paths, query strings, fragments and `user:password@host` values are rejected. The scheme itself is selected only by the **Use HTTPS** checkbox, so existing entries keep using HTTP unless the option is enabled.
 
 ### Reconfigure
 
-Open the integration entry and choose **Reconfigure** to change the host, username or password. The new connection is validated before saving, and the NAS serial number is checked so the entry stays linked to the same physical device. To connect a different NAS, add a new integration entry. The entry reloads automatically after saving.
+Open the integration entry and choose **Reconfigure** to change the host, username, password or HTTPS option. The new connection is validated before saving, and the NAS serial number is checked so the entry stays linked to the same physical device. To connect a different NAS, add a new integration entry. The entry reloads automatically after saving.
 
 ## Options
 
@@ -160,10 +164,13 @@ Entity names use the Home Assistant entity-naming convention and are translated 
 - The password is not copied into `hass.data`; the coordinator is kept in `entry.runtime_data` and owns the single client session.
 - Diagnostics redact the password, account lists, cloud-access payload and USB payload.
 
-### Known limitation: plain HTTP
+### Transport security
 
-The vendored OS5 client uses `http://` instead of HTTPS, because the WD firmware exposes a plain HTTP API. Credentials are base64-encoded, which is encoding, not encryption. Someone who can sniff the local network can recover them. Use the integration only on a trusted network:
+The integration supports both HTTP and HTTPS. The default is HTTP so existing entries keep working. When the NAS web interface uses `https://`, enable **Use HTTPS** and include the port in the host, for example `192.168.1.10:8543`.
 
+WD firmware uses a self-signed certificate. For HTTPS the integration therefore encrypts the connection but does not verify the certificate identity. This protects the credentials from passive sniffing on the local network, but not from an attacker who can actively intercept or redirect traffic. Over HTTP the credentials are sent as base64, which is encoding, not encryption, so anyone who can sniff the local network can recover them.
+
+- Prefer HTTPS when the NAS web interface supports it.
 - Put the NAS and Home Assistant on a dedicated VLAN or trusted network.
 - Do not expose the NAS web interface to the internet.
 - Use a unique admin password, not a password reused elsewhere.
@@ -175,7 +182,17 @@ See [SECURITY.md](SECURITY.md) for the threat model, the audit findings and the 
 
 ### `cannot_connect`
 
-Verify the IP address or hostname, that the NAS web interface is reachable from Home Assistant and that the admin account is not already logged in elsewhere.
+Verify the IP address or hostname, the port and the HTTP/HTTPS choice. The NAS web interface must be reachable from Home Assistant and the admin account must not already be logged in elsewhere.
+
+### The NAS uses HTTPS or port 8543
+
+Some OS5 firmware serves the web interface only over HTTPS on port 8543. In the integration:
+
+1. Set **Host** to the NAS address and port, for example `192.168.1.10:8543`. Do not paste `https://` into the host field.
+2. Enable **Use HTTPS**.
+3. Leave the username and password unchanged and submit the form.
+
+The integration accepts the WD self-signed certificate without verifying it. If the NAS still redirects HTTP to HTTPS, the HTTPS option was not enabled or the configured port is wrong.
 
 ### `invalid_auth` or "account is currently in use"
 
@@ -233,10 +250,7 @@ instead of opening re-authentication or continuing to submit the password.
 
 The browser and Home Assistant may not use the same URL or the same source IP:
 
-1. Test `http://<nas-address>` in the browser, not only a bookmark that opens
-   `https://`. The integration uses plain HTTP on the configured port. If the
-   NAS only serves the admin API over HTTPS, the integration cannot use that
-   endpoint; see the plain-HTTP limitation above.
+1. Open the same URL in the browser: `http://<nas-address>` or `https://<nas-address>:8543`. In the integration use the same scheme and port. If the browser is redirected to HTTPS, enable **Use HTTPS** and include the port in the host.
 2. Check the NAS firewall or IP allowlist. Home Assistant may connect from a
    different address than the computer that runs the browser, especially when
    Home Assistant runs in Docker, a VM or another VLAN.
@@ -267,13 +281,19 @@ python3 -m pip install aiohttp
 python scripts/diagnose_login.py --host 192.168.1.10 --username admin
 ```
 
+For an HTTPS-only NAS, include the port and add `--https`:
+
+```bash
+python scripts/diagnose_login.py --host 192.168.1.10:8543 --https --username admin
+```
+
 The script needs Python 3 and `aiohttp`. It prompts for the password without
 echoing it, performs exactly one login attempt and prints the status, redirect
 chain, cookie names and attributes (values redacted) and the response body with
-secrets redacted. `MYCLOUD_HOST`, `MYCLOUD_USERNAME` and `MYCLOUD_PASSWORD` can
-replace the prompts. The script is not imported by the integration and is not a
-runtime dependency. Close the NAS web interface first, and do not run it while
-an `account_locked` block is active.
+secrets redacted. `MYCLOUD_HOST`, `MYCLOUD_USERNAME`, `MYCLOUD_PASSWORD` and
+`MYCLOUD_HTTPS=1` can replace the prompts and flags. The script is not imported
+by the integration and is not a runtime dependency. Close the NAS web interface
+first, and do not run it while an `account_locked` block is active.
 
 ### Recover a stale admin session over SSH (optional)
 
@@ -324,7 +344,7 @@ credentials to disk.
 
 ### `invalid_host`
 
-Remove `http://`, `https://`, paths, query strings and credentials from the host field.
+Remove `http://`, `https://`, paths, query strings and credentials from the host field. Select HTTPS with the **Use HTTPS** checkbox instead of adding a scheme to the host.
 
 ### Some sensors are unavailable
 

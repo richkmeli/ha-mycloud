@@ -20,6 +20,7 @@ from .const import (
     ACCOUNT_LOCKED_RETRY,
     ADMIN_SESSION_BUSY_RETRY,
     CONF_HOST,
+    CONF_HTTPS,
     CONF_PASSWORD,
     CONF_SERIAL,
     CONF_USERNAME,
@@ -116,6 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> b
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
         host,
+        use_https=bool(entry.data.get(CONF_HTTPS, False)),
     )
 
     try:

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-11-15
+
+### Added
+
+- Optional **Use HTTPS** checkbox in initial setup and reconfigure. The Host field stays scheme-less and may include the port, for example `192.168.1.10:8543`.
+- HTTPS uses a dedicated aiohttp connector that accepts the WD self-signed certificate without verification. Traffic is encrypted, but the certificate identity is not authenticated; see `SECURITY.md`.
+- The standalone login diagnostic accepts `--https` or `MYCLOUD_HTTPS=1` and follows the same certificate policy as the integration.
+- Tests for HTTPS URL construction, login `Origin`/`Referer`, connector setup, setup/reauth/reconfigure propagation, config-flow translations and a fake NAS served over TLS with a self-signed certificate.
+
+### Changed
+
+- Every API request, login header and power action now follows the scheme selected for the entry.
+- The HTTPS option is stored only when enabled. Existing entries and new entries that leave the checkbox off continue to use HTTP.
+
+### Fixed
+
+- Login failed with `invalid_auth` when OS5 served the web interface only over HTTPS, commonly on port 8543, because the vendored client always used `http://` and an HTTP-to-HTTPS redirect lost the login request. Set the Host to the NAS address with the port and enable **Use HTTPS**.
+
 ## [3.0.8] - 2026-11-15
 
 ### Fixed

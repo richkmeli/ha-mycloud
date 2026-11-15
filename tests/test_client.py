@@ -97,6 +97,50 @@ async def test_async_open_creates_a_bounded_session_and_logs_in():
     assert client.session is session
 
 
+async def test_async_open_uses_a_default_connector_for_http():
+    """HTTP stays on the aiohttp default, verified connector."""
+    client = MyCloudClient("admin", "secret", "nas.local")
+    session = MagicMock()
+    session.closed = False
+    session.close = AsyncMock()
+    client.login = AsyncMock()
+
+    with (
+        patch("custom_components.mycloud.client.aiohttp.TCPConnector") as connector_cls,
+        patch(
+            "custom_components.mycloud.client.aiohttp.ClientSession",
+            return_value=session,
+        ) as session_cls,
+    ):
+        await client._async_open()
+
+    connector_cls.assert_not_called()
+    assert session_cls.call_args.kwargs["connector"] is None
+
+
+async def test_async_open_disables_certificate_verification_for_https(caplog):
+    """The self-signed WD certificate is accepted for the configured host."""
+    caplog.set_level("DEBUG", logger="custom_components.mycloud.client")
+    client = MyCloudClient("admin", "secret", "nas.local:8543", use_https=True)
+    session = MagicMock()
+    session.closed = False
+    session.close = AsyncMock()
+    client.login = AsyncMock()
+
+    with (
+        patch("custom_components.mycloud.client.aiohttp.TCPConnector") as connector_cls,
+        patch(
+            "custom_components.mycloud.client.aiohttp.ClientSession",
+            return_value=session,
+        ) as session_cls,
+    ):
+        await client._async_open()
+
+    connector_cls.assert_called_once_with(ssl=False)
+    assert session_cls.call_args.kwargs["connector"] is connector_cls.return_value
+    assert "certificate verification is disabled for nas.local:8543" in caplog.text
+
+
 async def test_async_open_closes_the_session_when_login_fails():
     """A failed login does not leak the new aiohttp session."""
     client = MyCloudClient("admin", "secret", "nas.local")
@@ -338,6 +382,20 @@ async def test_power_action_checks_safety_then_shuts_down():
     assert session.calls[0][0] == "http://nas.local/cgi-bin/hd_config.cgi"
     assert session.calls[1][0] == "http://nas.local/cgi-bin/system_mgr.cgi"
     assert all(call[2]["Host"] == "nas.local" for call in session.calls)
+
+
+async def test_power_action_uses_https_urls_when_requested():
+    """Power actions follow the scheme selected for the entry."""
+    client = MyCloudClient("admin", "secret", "nas.local:8543", use_https=True)
+    session = _RecordingSession(
+        [_FakeResponse(200, "<root><res>0</res></root>"), _FakeResponse(200, "")]
+    )
+    client.session = session
+
+    await client.async_power_action("restart")
+
+    assert session.calls[0][0] == "https://nas.local:8543/cgi-bin/hd_config.cgi"
+    assert session.calls[1][0] == "https://nas.local:8543/cgi-bin/system_mgr.cgi"
 
 
 async def test_power_action_restart_uses_restart_command():

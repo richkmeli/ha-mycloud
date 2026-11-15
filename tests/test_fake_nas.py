@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import ssl
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 from custom_components.mycloud.client import (
     AdminSessionBusyError,
@@ -109,6 +115,64 @@ async def fake_nas(request):
     nas.host = f"{server.host}:{server.port}"
     try:
         yield nas
+    finally:
+        await server.close()
+
+
+def _self_signed_context(tmp_path) -> ssl.SSLContext:
+    """Return a TLS server context with a throwaway self-signed certificate."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "wdmycloud.local")])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+
+    cert_path = tmp_path / "cert.pem"
+    key_path = tmp_path / "key.pem"
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_path, key_path)
+    return context
+
+
+async def test_https_login_accepts_a_self_signed_nas_certificate(tmp_path):
+    """The HTTPS option connects to an OS5 NAS with a self-signed certificate."""
+    nas = FakeNAS()
+    app = web.Application()
+    app.router.add_post("/nas/v1/auth", nas.login)
+    app.router.add_delete("/nas/v1/auth", nas.logout)
+    app.router.add_get("/xml/sysinfo.xml", nas.system_info)
+
+    server = TestServer(app)
+    await server.start_server(ssl=_self_signed_context(tmp_path))
+    nas.host = f"{server.host}:{server.port}"
+    try:
+        client = MyCloudClient("admin", "secret", nas.host, use_https=True)
+        await client.async_connect()
+
+        assert client.scheme == "https://"
+        assert (await client.system_info())["size"]["total"] == 42
+        assert nas.logins == 1
+
+        await client.async_close()
+
+        assert nas.logouts == 1
     finally:
         await server.close()
 

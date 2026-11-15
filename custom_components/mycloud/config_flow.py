@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from ipaddress import ip_address
 from typing import Any
 from urllib.parse import urlsplit
@@ -14,6 +15,7 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState, ConfigFlowResult
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -22,6 +24,7 @@ from homeassistant.helpers.selector import (
 from .client import MyCloudClient, status_code
 from .const import (
     CONF_HOST,
+    CONF_HTTPS,
     CONF_PASSWORD,
     CONF_SERIAL,
     CONF_UPDATE_INTERVAL,
@@ -55,6 +58,11 @@ def _schema(schema: dict[Any, Any]) -> Any:
     at runtime.
     """
     return vol.Schema(schema)
+
+
+def _use_https(data: Mapping[str, Any]) -> bool:
+    """Return whether the NAS API should be reached over HTTPS."""
+    return bool(data.get(CONF_HTTPS, False))
 
 
 def _login_error_key(err: Exception) -> str:
@@ -184,6 +192,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
                     host,
+                    use_https=_use_https(user_input),
                 )
                 title = host
                 serial = ""
@@ -210,6 +219,8 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_USERNAME: user_input[CONF_USERNAME],
                         CONF_PASSWORD: user_input[CONF_PASSWORD],
                     }
+                    if user_input.get(CONF_HTTPS):
+                        data[CONF_HTTPS] = True
                     if serial:
                         data[CONF_SERIAL] = serial
                     return self.async_create_entry(title=title, data=data)
@@ -227,6 +238,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_PASSWORD): TextSelector(
                         TextSelectorConfig(type=TextSelectorType.PASSWORD)
                     ),
+                    vol.Optional(CONF_HTTPS, default=False): BooleanSelector(),
                 }
             ),
             errors=errors,
@@ -254,6 +266,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     entry.data[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
                     entry.data[CONF_HOST],
+                    use_https=_use_https(entry.data),
                 )
                 try:
                     await client.async_connect()
@@ -311,6 +324,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         user_input[CONF_USERNAME],
                         user_input[CONF_PASSWORD],
                         host,
+                        use_https=_use_https(user_input),
                     )
                     title = host
                     serial = ""
@@ -357,6 +371,10 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             }.items()
                             if key != CONF_VERSION
                         }
+                        if user_input.get(CONF_HTTPS):
+                            data[CONF_HTTPS] = True
+                        else:
+                            data.pop(CONF_HTTPS, None)
                         if serial:
                             data[CONF_SERIAL] = serial
                         result = self.async_update_reload_and_abort(
@@ -384,6 +402,10 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_PASSWORD, default=entry.data.get(CONF_PASSWORD)
                     ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                    vol.Optional(
+                        CONF_HTTPS,
+                        default=bool(entry.data.get(CONF_HTTPS, False)),
+                    ): BooleanSelector(),
                 }
             ),
             errors=errors,

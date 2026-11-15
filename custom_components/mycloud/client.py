@@ -19,7 +19,6 @@ import aiohttp
 
 from .const import REQUEST_TIMEOUT
 from .wdnas import (
-    SCHEME,
     AccountLockedError,
     AdminSessionBusyError,
     InvalidLoginError,
@@ -62,9 +61,16 @@ def status_code(err: Exception) -> int | None:
 class MyCloudClient(WDNASClient):
     """A WD NAS client with bounded requests and clean session lifecycle."""
 
-    def __init__(self, username: str, password: str, host: str) -> None:
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        host: str,
+        *,
+        use_https: bool = False,
+    ) -> None:
         """Initialize an OS5 client."""
-        super().__init__(username, password, host)
+        super().__init__(username, password, host, use_https=use_https)
         self._session_lock = asyncio.Lock()
         self._power_lock = asyncio.Lock()
 
@@ -128,7 +134,7 @@ class MyCloudClient(WDNASClient):
         headers = self._headers(form=True)
 
         async with self._power_lock:
-            safety_url = f"{SCHEME}{self.host}{_POWER_SAFETY_PATH}"
+            safety_url = f"{self.scheme}{self.host}{_POWER_SAFETY_PATH}"
             async with session.post(
                 safety_url, data=_POWER_SAFETY_COMMAND, headers=headers
             ) as response:
@@ -148,7 +154,7 @@ class MyCloudClient(WDNASClient):
             if code != 0:
                 raise PowerActionBlockedError(code)
 
-            action_url = f"{SCHEME}{self.host}{_POWER_ACTION_PATH}"
+            action_url = f"{self.scheme}{self.host}{_POWER_ACTION_PATH}"
             try:
                 async with session.post(
                     action_url, data=f"cmd={command}", headers=headers
@@ -163,8 +169,17 @@ class MyCloudClient(WDNASClient):
     async def _async_open(self) -> None:
         """Create a fresh session and log in."""
         await self._async_close_locked()
+        # The WD firmware uses a self-signed certificate, so certificate
+        # verification cannot be used for the local HTTPS endpoint. The
+        # integration only talks to the host configured by the user.
+        connector = aiohttp.TCPConnector(ssl=False) if self.use_https else None
+        if connector is not None:
+            _LOGGER.debug(
+                "HTTPS certificate verification is disabled for %s", self.host
+            )
         self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+            connector=connector,
         )
         try:
             await self.login()

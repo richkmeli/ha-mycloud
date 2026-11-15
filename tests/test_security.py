@@ -10,7 +10,10 @@ PACKAGE = Path(__file__).parents[1] / "custom_components" / "mycloud"
 FORBIDDEN = re.compile(
     r"\b(eval|exec|__import__|subprocess|os\.system|os\.popen|pickle)\b"
 )
-SCHEME_DECLARATION = 'SCHEME = "http://"'
+SCHEME_DECLARATIONS = {
+    'SCHEME = "http://"',
+    'HTTPS_SCHEME = "https://"',
+}
 
 
 def test_manifest_has_no_external_requirements():
@@ -30,9 +33,10 @@ def test_no_hardcoded_network_endpoints():
     """All traffic is built from the user-configured NAS host."""
     for path in PACKAGE.rglob("*.py"):
         for line in path.read_text().splitlines():
-            if path.name == "wdnas.py" and line.strip() == SCHEME_DECLARATION:
-                # The WD firmware exposes a plain HTTP API only. This is the
-                # single scheme declaration used to build every request.
+            if path.name == "wdnas.py" and line.strip() in SCHEME_DECLARATIONS:
+                # The WD firmware exposes the same API over HTTP and HTTPS.
+                # These are the only scheme declarations in the package and
+                # every request is built from the configured host.
                 continue
             assert "http://" not in line, path
             assert "https://" not in line, path
@@ -45,6 +49,20 @@ def test_no_credentials_in_log_calls():
             if "_LOGGER." in line:
                 assert "PASSWORD" not in line, path
                 assert "password" not in line.lower(), path
+
+
+def test_config_flow_translations_include_the_https_option():
+    """The HTTPS checkbox is documented in the source and both translations."""
+    strings = json.loads((PACKAGE / "strings.json").read_text())
+    for language in ("en", "it"):
+        translations = json.loads(
+            (PACKAGE / "translations" / f"{language}.json").read_text()
+        )
+        for source in (strings, translations):
+            for step in ("user", "reconfigure"):
+                config_step = source["config"]["step"][step]
+                assert "https" in config_step["data"]
+                assert "https" in config_step["data_description"]
 
 
 def test_vendored_client_keeps_license_and_provenance():

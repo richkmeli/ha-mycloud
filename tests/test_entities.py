@@ -380,6 +380,15 @@ def test_device_info_includes_serial_number_when_reported(coordinator):
     assert info["serial_number"] == "NAS-SERIAL"
 
 
+def test_device_info_configuration_url_uses_the_entry_scheme(coordinator):
+    """The device page opens the NAS with the scheme selected in the entry."""
+    coordinator.config_entry.data = {"Host": "nas.local:8543", "https": True}
+
+    info, _, _, _ = build_device_info(coordinator)
+
+    assert info["configuration_url"] == "https://nas.local:8543"
+
+
 async def test_all_entity_keys_have_translations_and_icons(coordinator, config_entry):
     """Every entity translation key is present in strings.json and icons.json."""
     config_entry.runtime_data = coordinator

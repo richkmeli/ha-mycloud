@@ -8,6 +8,7 @@ CONF_HOST = "Host"
 CONF_USERNAME = "Username"
 CONF_PASSWORD = "Password"  # noqa: S105
 CONF_SERIAL = "Serial"
+CONF_HTTPS = "https"
 CONF_UPDATE_INTERVAL = "update_interval"
 
 # Legacy key. It is only read to reject entries created for OS2, which this

@@ -12,6 +12,7 @@ import pytest
 
 from custom_components.mycloud.wdnas import (
     ENDPOINTS,
+    HTTPS_SCHEME,
     SCHEME,
     AccountLockedError,
     AdminSessionBusyError,
@@ -299,6 +300,25 @@ def test_client_is_os5_only_and_normalizes_the_username(client):
     assert client.session is not None
 
 
+def test_client_defaults_to_http():
+    """Entries created before the HTTPS option keep using HTTP."""
+    nas = WDNASClient("Admin", "secret", "nas.local:8543")
+
+    assert nas.use_https is False
+    assert nas.scheme == SCHEME
+    assert nas._url("login") == "http://nas.local:8543/nas/v1/auth"
+
+
+def test_client_builds_https_urls_when_requested():
+    """The HTTPS option changes every API URL built by the client."""
+    nas = WDNASClient("Admin", "secret", "nas.local:8543", use_https=True)
+
+    assert nas.use_https is True
+    assert nas.scheme == HTTPS_SCHEME
+    assert nas._url("login") == "https://nas.local:8543/nas/v1/auth"
+    assert nas._url("system_info") == "https://nas.local:8543/xml/sysinfo.xml"
+
+
 def test_parse_uptime_text_supports_plural_and_short_forms():
     """The uptime parser accepts the formats returned by OS5 firmware."""
     assert parse_uptime_text("0 day 0 hour 50 minutes") == 3000
@@ -317,6 +337,7 @@ def test_json_keys_describes_the_body_without_its_values():
 def test_endpoints_cover_every_used_os5_operation():
     """Every operation called by the integration has a fixed OS5 path."""
     assert SCHEME == "http://"
+    assert HTTPS_SCHEME == "https://"
     assert set(ENDPOINTS) == {
         "login",
         "logout",
@@ -368,6 +389,23 @@ async def test_login_posts_the_base64_password_and_stores_the_cookie(client):
         "Referer": "http://nas.local:8080/",
         "X-Requested-With": "XMLHttpRequest",
     }
+    assert client.phpsessid == "session-id"
+
+
+async def test_login_uses_the_https_origin_when_requested():
+    """An HTTPS entry sends the matching Origin and Referer headers."""
+    client = WDNASClient("Admin", "secret", "nas.local:8543", use_https=True)
+    client.session = _FakeSession(
+        _FakeResponse(set_cookies=["PHPSESSID=session-id; Path=/nas/v1/auth"])
+    )
+
+    await client.login()
+
+    method, url, kwargs = client.session.calls[0]
+    assert method == "POST"
+    assert url == "https://nas.local:8543/nas/v1/auth"
+    assert kwargs["headers"]["Origin"] == "https://nas.local:8543"
+    assert kwargs["headers"]["Referer"] == "https://nas.local:8543/"
     assert client.phpsessid == "session-id"
 
 

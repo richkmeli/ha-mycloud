@@ -8,8 +8,8 @@ from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import CONF_HOST, DOMAIN
-from .wdnas import SCHEME
+from .const import CONF_HOST, CONF_HTTPS, DOMAIN
+from .wdnas import HTTPS_SCHEME, SCHEME
 
 # The NAS returns alert times in English, for example
 # "Fri, Nov 13, 2026 11:55:36 AM". Parsing them with strptime would depend on
@@ -55,7 +55,13 @@ def build_device_info(coordinator) -> tuple[DeviceInfo, str, str, str | None]:
 
     entry_data = getattr(coordinator.config_entry, "data", None)
     host = entry_data.get(CONF_HOST) if isinstance(entry_data, dict) else None
-    configuration_url = f"{SCHEME}{host}" if host else None
+    use_https = (
+        bool(entry_data.get(CONF_HTTPS, False))
+        if isinstance(entry_data, dict)
+        else False
+    )
+    scheme = HTTPS_SCHEME if use_https else SCHEME
+    configuration_url = f"{scheme}{host}" if host else None
 
     info = DeviceInfo(
         identifiers={(DOMAIN, serial_number)},

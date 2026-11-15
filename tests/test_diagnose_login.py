@@ -13,6 +13,12 @@ diagnose_login = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(diagnose_login)
 
 
+def test_scheme_supports_http_and_https():
+    """The diagnostic follows the same scheme selected in the integration."""
+    assert diagnose_login._scheme(False) == "http://"
+    assert diagnose_login._scheme(True) == "https://"
+
+
 def test_redact_body_hides_passwords_tokens_and_cookies():
     """The body excerpt cannot leak the password or common token fields."""
     body = (

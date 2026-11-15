@@ -12,6 +12,9 @@ allows only one active admin session.
 Examples:
     python scripts/diagnose_login.py --host 192.168.1.10 --username admin
 
+    python scripts/diagnose_login.py --host 192.168.1.10:8543 --https \\
+        --username admin
+
     MYCLOUD_PASSWORD='secret' python scripts/diagnose_login.py \\
         --host 192.168.1.10 --username admin
 
@@ -34,6 +37,7 @@ from urllib.parse import urlsplit
 import aiohttp
 
 SCHEME = "http://"
+HTTPS_SCHEME = "https://"
 LOGIN_PATH = "/nas/v1/auth"
 DEFAULT_TIMEOUT = 30
 DEFAULT_BODY_LIMIT = 2000
@@ -114,6 +118,11 @@ def _print_redirects(response: aiohttp.ClientResponse) -> None:
         )
 
 
+def _scheme(use_https: bool) -> str:
+    """Return the URL scheme selected for the diagnostic."""
+    return HTTPS_SCHEME if use_https else SCHEME
+
+
 def _has_session_cookie(cookies: http.cookies.SimpleCookie) -> bool:
     """Return True when a cookie set contains a non-empty session cookie.
 
@@ -158,6 +167,15 @@ def _parse_args() -> argparse.Namespace:
         help="admin username (env: MYCLOUD_USERNAME)",
     )
     parser.add_argument(
+        "--https",
+        action="store_true",
+        default=os.environ.get("MYCLOUD_HTTPS", "").strip().lower()
+        in {"1", "true", "yes", "on"},
+        help=(
+            "use HTTPS and accept the WD self-signed certificate (env: MYCLOUD_HTTPS)"
+        ),
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
         default=DEFAULT_TIMEOUT,
@@ -182,9 +200,10 @@ def _parse_args() -> argparse.Namespace:
 
 async def _diagnose(host: str, username: str, password: str, args) -> int:
     """Run one login attempt and return a process exit code."""
-    url = f"{SCHEME}{host}{LOGIN_PATH}"
+    scheme = _scheme(args.https)
+    url = f"{scheme}{host}{LOGIN_PATH}"
     encoded_password = base64.b64encode(password.encode("utf-8")).decode("utf-8")
-    origin = f"{SCHEME}{host}"
+    origin = f"{scheme}{host}"
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -197,9 +216,12 @@ async def _diagnose(host: str, username: str, password: str, args) -> int:
     print(f"URL: {url}")
     print(f"Username: {username.lower()}")
     print(f"Payload password: base64, {len(encoded_password)} characters")
+    if args.https:
+        print("TLS certificate verification: disabled (WD self-signed certificate)")
 
     timeout = aiohttp.ClientTimeout(total=args.timeout)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    connector = aiohttp.TCPConnector(ssl=False) if args.https else None
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         try:
             async with session.post(
                 url,

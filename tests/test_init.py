@@ -113,7 +113,7 @@ async def test_setup_stores_only_coordinator(hass, config_entry):
     assert "secret" not in repr(config_entry.runtime_data)
     assert hass.data == {}
     client.async_connect.assert_awaited_once()
-    client_cls.assert_called_once_with("admin", "secret", "nas.local")
+    client_cls.assert_called_once_with("admin", "secret", "nas.local", use_https=False)
     hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 
     registry.async_get_or_create.assert_called_once_with(
@@ -127,6 +127,30 @@ async def test_setup_stores_only_coordinator(hass, config_entry):
         configuration_url=None,
     )
     assert coordinator.device_id == "nas-device"
+
+
+async def test_setup_passes_https_to_the_client(hass, config_entry):
+    """An HTTPS entry reaches the NAS with the matching scheme."""
+    config_entry.data["https"] = True
+    client = AsyncMock()
+    coordinator = MagicMock()
+    coordinator.async_config_entry_first_refresh = AsyncMock()
+    coordinator.async_close = AsyncMock()
+    coordinator.data = {"device_info": {"serial_number": "NAS-SERIAL"}}
+    registry = MagicMock()
+    registry.async_get_or_create.return_value.id = "nas-device"
+
+    with (
+        patch(
+            "custom_components.mycloud.MyCloudClient", return_value=client
+        ) as client_cls,
+        patch("custom_components.mycloud.MyCloudCoordinator", return_value=coordinator),
+        patch("custom_components.mycloud.dr.async_get", return_value=registry),
+    ):
+        assert await async_setup_entry(hass, config_entry) is True
+
+    client_cls.assert_called_once_with("admin", "secret", "nas.local", use_https=True)
+    client.async_connect.assert_awaited_once()
 
 
 async def test_setup_rejects_a_legacy_os2_entry(hass, config_entry):

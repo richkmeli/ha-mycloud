@@ -137,6 +137,41 @@ async def test_user_flow_falls_back_to_host_without_serial(flow):
     assert flow.unique_id == "nas.local"
 
 
+async def test_user_flow_stores_https_when_enabled(flow):
+    """The HTTPS checkbox selects HTTPS and is persisted in the entry."""
+    client = AsyncMock()
+    client.device_info.return_value = {
+        "name": "My Cloud",
+        "serial_number": "NAS-SERIAL",
+    }
+    client.system_info.return_value = {}
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ) as client_cls:
+        result = await flow.async_step_user({**USER_INPUT, "https": True})
+
+    assert result["type"] == "create_entry"
+    assert result["data"]["https"] is True
+    client_cls.assert_called_once_with("admin", "secret", "nas.local", use_https=True)
+
+
+async def test_user_flow_omits_https_when_disabled(flow):
+    """HTTP entries do not store a false HTTPS flag."""
+    client = AsyncMock()
+    client.device_info.return_value = {"name": "My Cloud"}
+    client.system_info.return_value = {}
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ) as client_cls:
+        result = await flow.async_step_user({**USER_INPUT, "https": False})
+
+    assert result["type"] == "create_entry"
+    assert "https" not in result["data"]
+    client_cls.assert_called_once_with("admin", "secret", "nas.local", use_https=False)
+
+
 async def test_user_flow_aborts_for_duplicate_unique_id(flow):
     """A second entry for the same serial number is rejected."""
     client = AsyncMock()
@@ -243,7 +278,9 @@ async def test_reauth_confirm_updates_password(reauth_flow):
         result = await reauth_flow.async_step_reauth_confirm({"Password": "new-secret"})
 
     assert result["type"] == "abort"
-    client_cls.assert_called_once_with("admin", "new-secret", "nas.local")
+    client_cls.assert_called_once_with(
+        "admin", "new-secret", "nas.local", use_https=False
+    )
     kwargs = reauth_flow.async_update_reload_and_abort.call_args.kwargs
     assert kwargs["data"]["Password"] == "new-secret"
     client.async_close.assert_awaited_once()
@@ -268,6 +305,25 @@ async def test_reauth_unloads_the_entry_before_login(reauth_flow):
     assert result["type"] == "abort"
     reauth_flow.hass.config_entries.async_unload.assert_awaited_once_with("entry-1")
     reauth_flow.hass.config_entries.async_schedule_reload.assert_not_called()
+
+
+async def test_reauth_keeps_https_for_an_existing_entry(reauth_flow):
+    """Reauth uses and preserves the scheme stored in the entry."""
+    entry = reauth_flow.hass.config_entries.async_get_known_entry.return_value
+    entry.data["https"] = True
+    client = AsyncMock()
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ) as client_cls:
+        result = await reauth_flow.async_step_reauth_confirm({"Password": "new-secret"})
+
+    assert result["type"] == "abort"
+    client_cls.assert_called_once_with(
+        "admin", "new-secret", "nas.local", use_https=True
+    )
+    kwargs = reauth_flow.async_update_reload_and_abort.call_args.kwargs
+    assert kwargs["data"]["https"] is True
 
 
 async def test_reauth_restores_the_entry_when_login_fails(reauth_flow):
@@ -450,7 +506,9 @@ async def test_reconfigure_same_device_updates_host(reconfigure_flow):
         )
 
     assert result["type"] == "abort"
-    client_cls.assert_called_once_with("admin", "new-secret", "new-nas.local")
+    client_cls.assert_called_once_with(
+        "admin", "new-secret", "new-nas.local", use_https=False
+    )
     client.async_close.assert_awaited_once()
     reconfigure_flow.async_set_unique_id.assert_not_awaited()
     reconfigure_flow._abort_if_unique_id_mismatch.assert_not_called()
@@ -464,6 +522,53 @@ async def test_reconfigure_same_device_updates_host(reconfigure_flow):
         "Password": "new-secret",
         "Serial": "NAS-SERIAL",
     }
+
+
+async def test_reconfigure_enables_https(reconfigure_flow):
+    """Enabling HTTPS updates the client and stores the flag."""
+    client = AsyncMock()
+    client.device_info.return_value = {
+        "name": "My Cloud",
+        "serial_number": "NAS-SERIAL",
+    }
+    client.system_info.return_value = {}
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ) as client_cls:
+        result = await reconfigure_flow.async_step_reconfigure(
+            {**USER_INPUT, "Host": "nas.local:8543", "https": True}
+        )
+
+    assert result["type"] == "abort"
+    client_cls.assert_called_once_with(
+        "admin", "secret", "nas.local:8543", use_https=True
+    )
+    kwargs = reconfigure_flow.async_update_reload_and_abort.call_args.kwargs
+    assert kwargs["data"]["Host"] == "nas.local:8543"
+    assert kwargs["data"]["https"] is True
+
+
+async def test_reconfigure_disabling_https_removes_the_flag(reconfigure_flow):
+    """Turning HTTPS off returns the entry to the default HTTP scheme."""
+    entry = reconfigure_flow.hass.config_entries.async_get_known_entry.return_value
+    entry.data["https"] = True
+    client = AsyncMock()
+    client.device_info.return_value = {
+        "name": "My Cloud",
+        "serial_number": "NAS-SERIAL",
+    }
+    client.system_info.return_value = {}
+
+    with patch(
+        "custom_components.mycloud.config_flow.MyCloudClient", return_value=client
+    ) as client_cls:
+        result = await reconfigure_flow.async_step_reconfigure(USER_INPUT)
+
+    assert result["type"] == "abort"
+    client_cls.assert_called_once_with("admin", "secret", "nas.local", use_https=False)
+    kwargs = reconfigure_flow.async_update_reload_and_abort.call_args.kwargs
+    assert "https" not in kwargs["data"]
 
 
 async def test_reconfigure_rejects_a_different_device(reconfigure_flow):
