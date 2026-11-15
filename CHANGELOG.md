@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-11-15
+
+### Fixed
+
+- Setup now passes the account-lock and busy-session delays to Home Assistant's setup retry. A locked account or an active admin session is no longer retried with the default fast backoff, which could keep submitting the password and extend the block.
+
 ## [3.0.3] - 2026-11-15
 
 ### Added
