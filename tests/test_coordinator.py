@@ -11,9 +11,13 @@ import pytest
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.mycloud.const import ADMIN_SESSION_BUSY_RETRY
+from custom_components.mycloud.const import (
+    ACCOUNT_LOCKED_RETRY,
+    ADMIN_SESSION_BUSY_RETRY,
+)
 from custom_components.mycloud.coordinator import MyCloudCoordinator
 from custom_components.mycloud.wdnas import (
+    AccountLockedError,
     AdminSessionBusyError,
     InvalidLoginError,
     RequestFailedError,
@@ -239,6 +243,30 @@ async def test_update_busy_session_after_expiry_retries_later(coordinator, clien
 
     assert err.value.translation_key == "admin_session_busy"
     assert err.value.retry_after == ADMIN_SESSION_BUSY_RETRY
+
+
+async def test_update_account_block_retries_later(coordinator, client):
+    """A temporary firmware block is delayed, not sent to reauth."""
+    client.session = None
+    client.async_reconnect.side_effect = AccountLockedError("account blocked")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == "account_locked"
+    assert err.value.retry_after == ACCOUNT_LOCKED_RETRY
+
+
+async def test_update_account_block_after_expiry_retries_later(coordinator, client):
+    """A block on reconnect after a session expiry keeps the retry delay."""
+    client.system_info.side_effect = RequestFailedError(403)
+    client.async_reconnect.side_effect = AccountLockedError("account blocked")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == "account_locked"
+    assert err.value.retry_after == ACCOUNT_LOCKED_RETRY
 
 
 async def test_update_reconnects_when_session_is_missing(coordinator, client):

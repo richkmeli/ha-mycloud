@@ -26,3 +26,8 @@ REQUEST_TIMEOUT = 30
 # OS5 accepts one admin session at a time. When another session is active,
 # wait before retrying instead of asking for the password or hammering the NAS.
 ADMIN_SESSION_BUSY_RETRY = 300
+
+# The firmware blocks an account or an IP after repeated failed logins. WD
+# documents a 1-2 hour IP block; retry later and never keep submitting the
+# password while the block is active.
+ACCOUNT_LOCKED_RETRY = 1800

@@ -27,6 +27,7 @@ This is a community fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-myclo
 - **Stale device removal** — disks and volumes that are no longer reported can be removed from the device page.
 - **Power controls** — Restart and Shutdown buttons. Restart is enabled by default; Shutdown is created disabled.
 - **Diagnostics** — downloadable diagnostics with the password and personal payloads redacted.
+- **Login diagnostics** — a standalone, redacted login diagnostic script for troubleshooting rejected credentials.
 - **Translations** — English and Italian, including entity names and setup errors.
 
 ## Requirements
@@ -189,8 +190,10 @@ allows only one active admin session, so the same message appears when:
 Starting with 3.0.1 the integration releases its server-side session with
 `DELETE /nas/v1/auth` on unload, reconfigure and re-authentication. It also
 reports the busy response with a dedicated `admin_session_busy` error and
-retries later, instead of asking for the password again. Update the
-integration before troubleshooting the NAS.
+retries later, instead of asking for the password again. Starting with 3.0.3
+the login also accepts a `PHPSESSID` cookie set by a redirect and ignores a
+malformed `Set-Cookie` header instead of reporting the password as wrong.
+Update the integration before troubleshooting the NAS.
 
 If the NAS still reports the account as in use:
 
@@ -201,6 +204,40 @@ If the NAS still reports the account as in use:
    renew the NAS session timeout.
 4. Re-enable the entry and retry. If the NAS remains locked, restart it once;
    a reboot releases the stale admin sessions.
+
+### `account_locked`
+
+The NAS temporarily blocks the admin account or the client IP after several
+consecutive failed logins. This is not a wrong password. The integration
+reports `account_locked` and retries later instead of opening re-authentication
+or continuing to submit the password.
+
+1. Stop trying to log in for at least 30-60 minutes. WD documents IP blocks
+   that can last 1-2 hours, and every new attempt can extend the block.
+2. If the block persists, restart the NAS once. A reboot clears the block and
+   any stale admin session.
+3. Run the login diagnostic below only after the wait or the reboot, and only
+   if the problem remains.
+
+### Diagnose a rejected login
+
+The integration logs the login HTTP status, redirect count, content type and a
+short response body at debug level, without the password or cookies. If
+`invalid_auth` persists with the correct password, run the standalone
+diagnostic from a clone of this repository, on a computer that can reach the
+NAS:
+
+```bash
+python scripts/diagnose_login.py --host 192.168.1.10 --username admin
+```
+
+The script prompts for the password without echoing it, performs exactly one
+login attempt and prints the status, redirect chain, cookie names and
+attributes (values redacted) and the response body with secrets redacted.
+`MYCLOUD_HOST`, `MYCLOUD_USERNAME` and `MYCLOUD_PASSWORD` can replace the
+prompts. The script is not imported by the integration and is not a runtime
+dependency. Close the NAS web interface first, and do not run it while an
+`account_locked` block is active.
 
 ### `invalid_host`
 
@@ -254,8 +291,8 @@ pip install -r requirements-test.txt
 pytest --cov=custom_components/mycloud --cov-report=term-missing --cov-report=json
 python scripts/check_coverage.py
 mypy
-ruff check custom_components tests
-ruff format --check custom_components tests
+ruff check custom_components tests scripts
+ruff format --check custom_components tests scripts
 ```
 
 The test suite covers host validation, config flow errors, setup and unload lifecycle, unique ID migration, stale device removal, coordinator re-authentication, entity values, translations, static security checks and every vendored OS5 endpoint. CI requires at least 95% line coverage for every module of the integration, including the vendored client.

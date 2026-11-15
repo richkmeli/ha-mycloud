@@ -20,6 +20,7 @@ from custom_components.mycloud import (
 )
 from custom_components.mycloud.const import DOMAIN
 from custom_components.mycloud.wdnas import (
+    AccountLockedError,
     AdminSessionBusyError,
     InvalidLoginError,
     RequestFailedError,
@@ -141,6 +142,19 @@ async def test_setup_busy_admin_session_is_retried(hass, config_entry):
             await async_setup_entry(hass, config_entry)
 
     assert err.value.translation_key == "admin_session_busy"
+    assert config_entry.runtime_data is None
+
+
+async def test_setup_temporary_account_block_is_retried(hass, config_entry):
+    """A firmware login block is delayed instead of starting reauth."""
+    client = AsyncMock()
+    client.async_connect.side_effect = AccountLockedError("account blocked")
+
+    with patch("custom_components.mycloud.MyCloudClient", return_value=client):
+        with pytest.raises(ConfigEntryNotReady) as err:
+            await async_setup_entry(hass, config_entry)
+
+    assert err.value.translation_key == "account_locked"
     assert config_entry.runtime_data is None
 
 

@@ -17,7 +17,7 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate WD My Cloud",
-        "description": "The NAS rejected the stored credentials. Enter the password again.",
+        "description": "The NAS rejected the stored credentials. Close any open NAS web interface and WD apps, then enter the admin password again.",
         "data": {
           "Password": "Password"
         },
@@ -42,8 +42,9 @@
     },
     "error": {
       "invalid_host": "Enter a hostname or IP address without a scheme, path or credentials.",
-      "invalid_auth": "Invalid username or password.",
+      "invalid_auth": "Invalid username or password, or another admin session is already active on the NAS. Close the NAS web interface and the WD apps, then try again.",
       "admin_session_busy": "Another admin session is already active on the NAS. Close the NAS web interface and the WD apps, wait a few minutes and try again.",
+      "account_locked": "The NAS temporarily blocked the admin account after repeated login attempts. Wait at least 30-60 minutes without trying again, then retry. A NAS reboot also clears the block.",
       "cannot_connect": "Unable to connect to the NAS.",
       "unknown": "Unexpected error."
     },
@@ -163,10 +164,13 @@
   },
   "exceptions": {
     "invalid_auth": {
-      "message": "Invalid WD My Cloud credentials."
+      "message": "The NAS rejected the WD My Cloud credentials, or another admin session is already active."
     },
     "admin_session_busy": {
       "message": "Another admin session is already active on the NAS. The integration will retry automatically."
+    },
+    "account_locked": {
+      "message": "The NAS temporarily blocked the admin account after repeated login attempts. The integration will retry automatically."
     },
     "cannot_connect": {
       "message": "Unable to connect to {host}: {error}"

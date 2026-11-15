@@ -32,7 +32,12 @@ from .const import (
     MAX_UPDATE_INTERVAL,
     MIN_UPDATE_INTERVAL,
 )
-from .wdnas import AdminSessionBusyError, InvalidLoginError, RequestFailedError
+from .wdnas import (
+    AccountLockedError,
+    AdminSessionBusyError,
+    InvalidLoginError,
+    RequestFailedError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +53,21 @@ def _schema(schema: dict[Any, Any]) -> Any:
     at runtime.
     """
     return vol.Schema(schema)
+
+
+def _login_error_key(err: Exception) -> str:
+    """Translate a NAS login error into a config flow error key."""
+    if isinstance(err, AccountLockedError):
+        return "account_locked"
+    if isinstance(err, AdminSessionBusyError):
+        return "admin_session_busy"
+    if isinstance(err, InvalidLoginError):
+        return "invalid_auth"
+    if isinstance(err, RequestFailedError):
+        return "invalid_auth" if status_code(err) in (401, 403) else "cannot_connect"
+    if isinstance(err, (TimeoutError, aiohttp.ClientError, OSError)):
+        return "cannot_connect"
+    return "unknown"
 
 
 def normalize_host(value: str) -> str:
@@ -157,21 +177,10 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await client.system_info()
                     title = str(device.get("name") or host).strip() or host
                     serial = str(device.get("serial_number") or "").strip()
-                except AdminSessionBusyError:
-                    errors["base"] = "admin_session_busy"
-                except InvalidLoginError:
-                    errors["base"] = "invalid_auth"
-                except RequestFailedError as err:
-                    errors["base"] = (
-                        "invalid_auth"
-                        if status_code(err) in (401, 403)
-                        else "cannot_connect"
-                    )
-                except (TimeoutError, aiohttp.ClientError, OSError):
-                    errors["base"] = "cannot_connect"
-                except Exception:
-                    _LOGGER.exception("Unexpected error validating the NAS")
-                    errors["base"] = "unknown"
+                except Exception as err:
+                    errors["base"] = _login_error_key(err)
+                    if errors["base"] == "unknown":
+                        _LOGGER.exception("Unexpected error validating the NAS")
                 finally:
                     await client.async_close()
 
@@ -231,21 +240,10 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 try:
                     await client.async_connect()
-                except AdminSessionBusyError:
-                    errors["base"] = "admin_session_busy"
-                except InvalidLoginError:
-                    errors["base"] = "invalid_auth"
-                except RequestFailedError as err:
-                    errors["base"] = (
-                        "invalid_auth"
-                        if status_code(err) in (401, 403)
-                        else "cannot_connect"
-                    )
-                except (TimeoutError, aiohttp.ClientError, OSError):
-                    errors["base"] = "cannot_connect"
-                except Exception:
-                    _LOGGER.exception("Unexpected error during re-authentication")
-                    errors["base"] = "unknown"
+                except Exception as err:
+                    errors["base"] = _login_error_key(err)
+                    if errors["base"] == "unknown":
+                        _LOGGER.exception("Unexpected error during re-authentication")
                 finally:
                     await client.async_close()
 
@@ -304,21 +302,10 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         await client.system_info()
                         title = str(device.get("name") or host).strip() or host
                         serial = str(device.get("serial_number") or "").strip()
-                    except AdminSessionBusyError:
-                        errors["base"] = "admin_session_busy"
-                    except InvalidLoginError:
-                        errors["base"] = "invalid_auth"
-                    except RequestFailedError as err:
-                        errors["base"] = (
-                            "invalid_auth"
-                            if status_code(err) in (401, 403)
-                            else "cannot_connect"
-                        )
-                    except (TimeoutError, aiohttp.ClientError, OSError):
-                        errors["base"] = "cannot_connect"
-                    except Exception:
-                        _LOGGER.exception("Unexpected error validating the NAS")
-                        errors["base"] = "unknown"
+                    except Exception as err:
+                        errors["base"] = _login_error_key(err)
+                        if errors["base"] == "unknown":
+                            _LOGGER.exception("Unexpected error validating the NAS")
                     finally:
                         await client.async_close()
 

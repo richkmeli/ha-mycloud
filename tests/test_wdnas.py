@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import http.cookies
 import json
 from xml.etree.ElementTree import ParseError
 
@@ -12,6 +13,7 @@ import pytest
 from custom_components.mycloud.wdnas import (
     ENDPOINTS,
     SCHEME,
+    AccountLockedError,
     AdminSessionBusyError,
     InvalidLoginError,
     RequestFailedError,
@@ -189,13 +191,21 @@ class _FakeCookie:
 
 
 class _FakeHeaders:
-    """Minimal response headers with the aiohttp getall method."""
+    """Minimal response headers with the aiohttp accessors used by login."""
 
-    def __init__(self, set_cookies: list[str]) -> None:
+    def __init__(
+        self,
+        set_cookies: list[str],
+        content_type: str = "application/json",
+    ) -> None:
         self._set_cookies = set_cookies
+        self._content_type = content_type
 
     def getall(self, name: str, default: list[str] | None = None) -> list[str]:
         return self._set_cookies if name == "Set-Cookie" else (default or [])
+
+    def get(self, name: str, default: str | None = None) -> str | None:
+        return self._content_type if name == "Content-Type" else default
 
 
 class _FakeCookieJar:
@@ -206,6 +216,11 @@ class _FakeCookieJar:
 
     def update_cookies(self, cookies: dict[str, str]) -> None:
         self.cookies.update(cookies)
+
+    def filter_cookies(self, url: str) -> dict[str, _FakeCookie]:
+        """Return the jar contents for a request, like aiohttp does."""
+        del url
+        return {key: _FakeCookie(value) for key, value in self.cookies.items()}
 
 
 class _FakeResponse:
@@ -218,12 +233,15 @@ class _FakeResponse:
         *,
         cookies: dict | None = None,
         set_cookies: list[str] | None = None,
+        history: tuple[_FakeResponse, ...] | None = None,
+        content_type: str = "application/json",
         error: Exception | None = None,
     ) -> None:
         self.status = status
         self._text = text
         self.cookies = cookies or {}
-        self.headers = _FakeHeaders(set_cookies or [])
+        self.headers = _FakeHeaders(set_cookies or [], content_type)
+        self.history = history or ()
         self._error = error
 
     async def text(self) -> str:
@@ -380,6 +398,146 @@ async def test_login_detects_busy_session_without_the_cookie(client):
 @pytest.mark.parametrize(
     "body",
     [
+        "You are already logged in from another device.",
+        "The account is already connected.",
+        "Another administrator session is active.",
+        "The session is already active.",
+        "The session is already open.",
+        "Maximum number of sessions reached.",
+        "Session limit exceeded.",
+        "Sei già connesso con un'altra sessione.",
+        "Sessione già attiva.",
+        "C'è un'altra sessione aperta.",
+    ],
+)
+async def test_login_detects_expanded_busy_messages(client, body):
+    """Localised and firmware-specific busy phrases are still recognised."""
+    client.session = _FakeSession(_FakeResponse(403, text=body))
+
+    with pytest.raises(AdminSessionBusyError) as err:
+        await client.login()
+
+    assert isinstance(err.value, InvalidLoginError)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "The account has been blocked after multiple consecutive login attempts.",
+        "The user account is locked.",
+        "Account locked out.",
+        "Too many consecutive login attempts.",
+        "Too many failed login attempts.",
+        "L'account è stato bloccato.",
+        "Troppi tentativi di accesso.",
+    ],
+)
+@pytest.mark.parametrize("status", [200, 403])
+async def test_login_detects_a_temporary_account_block(client, body, status):
+    """A blocked account or IP is delayed instead of being reported as wrong."""
+    client.session = _FakeSession(_FakeResponse(status, text=body))
+
+    with pytest.raises(AccountLockedError) as err:
+        await client.login()
+
+    assert isinstance(err.value, InvalidLoginError)
+
+
+async def test_account_block_wins_over_a_busy_session_hint(client):
+    """A body that mentions both phrases is treated as a temporary block."""
+    client.session = _FakeSession(
+        _FakeResponse(
+            403,
+            text="The account is blocked because another session is active.",
+        )
+    )
+
+    with pytest.raises(AccountLockedError):
+        await client.login()
+
+
+async def test_login_recovers_a_cookie_set_on_a_redirect(client):
+    """A cookie set by an intermediate redirect authenticates the session."""
+    redirect = _FakeResponse(
+        302,
+        set_cookies=["PHPSESSID=redirected; Path=/nas/v1/auth; HttpOnly"],
+    )
+    final = _FakeResponse(history=(redirect,))
+    client.session = _FakeSession(final)
+
+    await client.login()
+
+    assert client.phpsessid == "redirected"
+    assert client.session.cookie_jar.cookies == {"PHPSESSID": "redirected"}
+
+
+async def test_login_uses_a_cookie_already_in_the_jar(client):
+    """An aiohttp cookie jar entry is accepted when no header repeats it."""
+    client.session = _FakeSession(_FakeResponse())
+    client.session.cookie_jar.cookies["PHPSESSID"] = "jar-session"
+
+    await client.login()
+
+    assert client.phpsessid == "jar-session"
+
+
+async def test_login_replaces_an_empty_session_cookie_from_the_jar(client):
+    """An empty PHPSESSID header does not hide a valid cookie in the jar."""
+    client.session = _FakeSession(
+        _FakeResponse(set_cookies=["PHPSESSID=; Path=/nas/v1/auth"])
+    )
+    client.session.cookie_jar.cookies["PHPSESSID"] = "jar-session"
+
+    await client.login()
+
+    assert client.phpsessid == "jar-session"
+
+
+async def test_login_ignores_a_malformed_set_cookie_header(client, monkeypatch):
+    """A parser error in one cookie header does not abort the login."""
+    original_load = http.cookies.SimpleCookie.load
+
+    def broken_load(self, rawdata):
+        if rawdata == "broken":
+            raise http.cookies.CookieError("invalid cookie")
+        return original_load(self, rawdata)
+
+    monkeypatch.setattr(http.cookies.SimpleCookie, "load", broken_load)
+    client.session = _FakeSession(
+        _FakeResponse(
+            set_cookies=["broken", "PHPSESSID=still-valid; Path=/nas/v1/auth"]
+        )
+    )
+
+    await client.login()
+
+    assert client.phpsessid == "still-valid"
+
+
+async def test_login_failure_is_logged_without_the_password(client, caplog):
+    """The debug log records the response details but never the password."""
+    caplog.set_level("DEBUG", logger="custom_components.mycloud.wdnas")
+    client.session = _FakeSession(
+        _FakeResponse(
+            401,
+            text="Invalid username or password",
+            content_type="text/html",
+        )
+    )
+
+    with pytest.raises(RequestFailedError):
+        await client.login()
+
+    assert "HTTP 401" in caplog.text
+    assert "0 redirect(s)" in caplog.text
+    assert "text/html" in caplog.text
+    assert "Invalid username or password" in caplog.text
+    assert "secret" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
         "Invalid username or password",
         "Sign in user with your account",
     ],
@@ -392,6 +550,16 @@ async def test_login_keeps_bad_credentials_separate_from_busy(client, body):
         await client.login()
 
     assert not isinstance(err.value, AdminSessionBusyError)
+
+
+async def test_login_rejects_an_empty_session_cookie(client):
+    """A Set-Cookie header with an empty PHPSESSID is not authenticated."""
+    client.session = _FakeSession(
+        _FakeResponse(set_cookies=["PHPSESSID=; Path=/nas/v1/auth"])
+    )
+
+    with pytest.raises(InvalidLoginError):
+        await client.login()
 
 
 async def test_login_requires_the_session_cookie(client):

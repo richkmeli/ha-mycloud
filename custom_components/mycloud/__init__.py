@@ -26,7 +26,12 @@ from .const import (
 )
 from .coordinator import MyCloudCoordinator
 from .entity import build_device_info, get_disk, get_volume
-from .wdnas import AdminSessionBusyError, InvalidLoginError, RequestFailedError
+from .wdnas import (
+    AccountLockedError,
+    AdminSessionBusyError,
+    InvalidLoginError,
+    RequestFailedError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,6 +98,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> b
 
     try:
         await client.async_connect()
+    except AccountLockedError as err:
+        # Repeated failed logins temporarily block the account or the client
+        # IP. Retry later instead of asking for the password again.
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN, translation_key="account_locked"
+        ) from err
     except AdminSessionBusyError as err:
         # Not a credential problem: another admin session is active. Retry
         # with Home Assistant's setup backoff instead of asking for reauth.

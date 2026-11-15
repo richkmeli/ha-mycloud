@@ -17,7 +17,7 @@
       },
       "reauth_confirm": {
         "title": "Riautentica WD My Cloud",
-        "description": "Il NAS ha rifiutato le credenziali salvate. Inserisci di nuovo la password.",
+        "description": "Il NAS ha rifiutato le credenziali salvate. Chiudi l'interfaccia web del NAS e le app WD aperte, poi inserisci di nuovo la password dell'account amministratore.",
         "data": {
           "Password": "Password"
         },
@@ -42,8 +42,9 @@
     },
     "error": {
       "invalid_host": "Inserisci un hostname o un indirizzo IP senza schema, percorso o credenziali.",
-      "invalid_auth": "Nome utente o password non validi.",
+      "invalid_auth": "Nome utente o password non validi, oppure è già attiva un'altra sessione admin sul NAS. Chiudi l'interfaccia web del NAS e le app WD, poi riprova.",
       "admin_session_busy": "È già attiva un'altra sessione admin sul NAS. Chiudi l'interfaccia web del NAS e le app WD, attendi qualche minuto e riprova.",
+      "account_locked": "Il NAS ha bloccato temporaneamente l'account amministratore dopo vari tentativi di accesso. Attendi almeno 30-60 minuti senza riprovare, poi riprova. Anche un riavvio del NAS rimuove il blocco.",
       "cannot_connect": "Impossibile connettersi al NAS.",
       "unknown": "Errore imprevisto."
     },
@@ -163,10 +164,13 @@
   },
   "exceptions": {
     "invalid_auth": {
-      "message": "Credenziali WD My Cloud non valide."
+      "message": "Il NAS ha rifiutato le credenziali WD My Cloud, oppure è già attiva un'altra sessione admin."
     },
     "admin_session_busy": {
       "message": "È già attiva un'altra sessione admin sul NAS. L'integrazione riproverà automaticamente."
+    },
+    "account_locked": {
+      "message": "Il NAS ha bloccato temporaneamente l'account amministratore dopo vari tentativi di accesso. L'integrazione riproverà automaticamente."
     },
     "cannot_connect": {
       "message": "Impossibile connettersi a {host}: {error}"

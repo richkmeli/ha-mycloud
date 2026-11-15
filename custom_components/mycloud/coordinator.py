@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .client import MyCloudClient, status_code
 from .const import (
+    ACCOUNT_LOCKED_RETRY,
     ADMIN_SESSION_BUSY_RETRY,
     CONF_HOST,
     CONF_UPDATE_INTERVAL,
@@ -22,7 +23,12 @@ from .const import (
     DOMAIN,
 )
 from .entity import disk_key, volume_key
-from .wdnas import AdminSessionBusyError, InvalidLoginError, RequestFailedError
+from .wdnas import (
+    AccountLockedError,
+    AdminSessionBusyError,
+    InvalidLoginError,
+    RequestFailedError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,6 +110,8 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Reconnect and map login failures to coordinator errors."""
         try:
             await self.client.async_reconnect()
+        except AccountLockedError as err:
+            raise self._locked_failed(err) from err
         except AdminSessionBusyError as err:
             raise self._busy_failed(err) from err
         except InvalidLoginError as err:
@@ -165,6 +173,15 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             translation_domain=DOMAIN,
             translation_key="admin_session_busy",
             retry_after=ADMIN_SESSION_BUSY_RETRY,
+        )
+
+    def _locked_failed(self, err: Exception) -> UpdateFailed:
+        """Return a delayed retry while the NAS blocks the account or IP."""
+        _LOGGER.debug("NAS temporarily blocked the login: %s", err)
+        return UpdateFailed(
+            translation_domain=DOMAIN,
+            translation_key="account_locked",
+            retry_after=ACCOUNT_LOCKED_RETRY,
         )
 
     async def _async_fetch(self) -> dict[str, Any]:

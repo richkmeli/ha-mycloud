@@ -21,6 +21,7 @@ from typing import Any
 from xml.etree.ElementTree import Element, ParseError, fromstring
 
 import aiohttp
+from yarl import URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +52,30 @@ _UPTIME_ELEMENT_RE = re.compile(r"<uptime>(.*?)</uptime>", re.IGNORECASE | re.DO
 # already active. The firmware localizes the message, so match a few stable
 # fragments rather than the full sentence.
 _LOGIN_BUSY_RE = re.compile(
-    r"account_in_use|\bin use\b|\bin uso\b",
+    r"account_in_use"
+    r"|\bin use\b"
+    r"|\bin uso\b"
+    r"|\balready (?:logged|signed) in\b"
+    r"|\balready connected\b"
+    r"|\banother (?:admin(?:istrator)? )?session\b"
+    r"|\bsession (?:is )?already (?:active|open)\b"
+    r"|\bmaximum (?:number of )?sessions?\b"
+    r"|\bsession limit\b"
+    r"|\bgià connesso\b"
+    r"|\bsessione già attiva\b"
+    r"|\bun'altra sessione\b",
+    re.IGNORECASE,
+)
+
+# Repeated failed logins make the firmware block the account or the client IP
+# for a while. This is not a wrong password either, so it gets its own error.
+_LOGIN_LOCKED_RE = re.compile(
+    r"\bblocked\b"
+    r"|\blocked out\b"
+    r"|\baccount (?:is )?locked\b"
+    r"|\btoo many (?:consecutive |failed )?(?:login )?attempts\b"
+    r"|\bbloccat[oaie]\b"
+    r"|\btroppi tentativi\b",
     re.IGNORECASE,
 )
 
@@ -65,6 +89,15 @@ class AdminSessionBusyError(InvalidLoginError):
 
     OS5 accepts a single admin session. This is not a credential problem, so
     callers should retry later instead of asking the user for the password.
+    """
+
+
+class AccountLockedError(InvalidLoginError):
+    """Raised when the NAS temporarily blocks the account or the client IP.
+
+    The firmware blocks repeated failed logins for a while. Retrying with the
+    correct password during the block keeps the lock active, so callers must
+    wait instead of asking for the password again.
     """
 
 
@@ -91,9 +124,29 @@ def _is_admin_session_busy(body: str) -> bool:
     return _LOGIN_BUSY_RE.search(body) is not None
 
 
-def _busy_message(body: str) -> str:
-    """Return a short single-line description of the busy login response."""
-    return " ".join(body.split())[:200] or "Another admin session is active"
+def _is_account_locked(body: str) -> bool:
+    """Return True when a login response reports a temporary account block."""
+    return _LOGIN_LOCKED_RE.search(body) is not None
+
+
+def _login_error(body: str) -> InvalidLoginError | None:
+    """Return the specific login error described by a NAS response."""
+    if _is_account_locked(body):
+        return AccountLockedError(_login_message(body))
+    if _is_admin_session_busy(body):
+        return AdminSessionBusyError(_login_message(body))
+    return None
+
+
+def _login_message(body: str) -> str:
+    """Return a short single-line description of the login response."""
+    message = " ".join(body.split())[:200]
+    return message or "The NAS rejected the login"
+
+
+def _short_body(body: str) -> str:
+    """Return a compact body for a debug log, without changing its meaning."""
+    return " ".join(body.split())[:500]
 
 
 def _as_bool(value: str | None) -> bool:
@@ -214,25 +267,66 @@ class WDNASClient:
         ) as response:
             body = await response.text()
             if response.status != 200:
-                if _is_admin_session_busy(body):
-                    raise AdminSessionBusyError(_busy_message(body))
+                self._log_login_failure(response, body)
+                error = _login_error(body)
+                if error is not None:
+                    raise error
                 raise RequestFailedError(response.status)
 
-            # The NAS scopes some cookies to the login path. Add them to the
-            # jar with no path so they are also sent to the data endpoints.
-            for cookie_string in response.headers.getall("Set-Cookie", []):
-                cookie = http.cookies.SimpleCookie(cookie_string)
-                for key, morsel in cookie.items():
-                    session.cookie_jar.update_cookies({key: morsel.value})
-
-            cookies = response.cookies
-            if "PHPSESSID" not in cookies:
-                if _is_admin_session_busy(body):
-                    raise AdminSessionBusyError(_busy_message(body))
+            cookies = self._collect_login_cookies(response)
+            session_cookie = cookies.get("PHPSESSID")
+            if session_cookie is None or not session_cookie.value:
+                self._log_login_failure(response, body)
+                error = _login_error(body)
+                if error is not None:
+                    raise error
                 raise InvalidLoginError(
                     "Invalid Username/Password or missing session cookie"
                 )
-            self.phpsessid = cookies["PHPSESSID"].value
+
+            # The NAS scopes some cookies to the login path. Re-add every
+            # collected cookie with no path so the data endpoints receive it.
+            for key, morsel in cookies.items():
+                session.cookie_jar.update_cookies({key: morsel.value})
+            self.phpsessid = session_cookie.value
+
+    def _collect_login_cookies(
+        self, response: aiohttp.ClientResponse
+    ) -> http.cookies.SimpleCookie:
+        """Return the login cookies, including cookies set on a redirect.
+
+        Some firmware answers the login POST with a redirect and sets
+        ``PHPSESSID`` on that intermediate response. ``response.cookies`` only
+        contains the final response, so the history and the session jar are
+        checked as well. A malformed ``Set-Cookie`` header is ignored instead
+        of failing the whole login.
+        """
+        cookies = http.cookies.SimpleCookie()
+        for item in (*response.history, response):
+            for header in item.headers.getall("Set-Cookie", []):
+                try:
+                    cookies.load(header)
+                except http.cookies.CookieError:
+                    _LOGGER.debug("Ignoring a malformed NAS Set-Cookie header")
+
+        session = self._require_session()
+        session_cookie = cookies.get("PHPSESSID")
+        if session_cookie is None or not session_cookie.value:
+            for key, morsel in session.cookie_jar.filter_cookies(
+                URL(self._url("login"))
+            ).items():
+                cookies[key] = morsel.value
+        return cookies
+
+    def _log_login_failure(self, response: aiohttp.ClientResponse, body: str) -> None:
+        """Log a rejected login without logging the password or cookies."""
+        _LOGGER.debug(
+            "NAS login failed: HTTP %s, %s redirect(s), content-type %s, body: %s",
+            response.status,
+            len(response.history),
+            response.headers.get("Content-Type", "unknown"),
+            _short_body(body),
+        )
 
     async def logout(self) -> None:
         """End the NAS admin session without closing the local session.
@@ -454,6 +548,7 @@ class WDNASClient:
 __all__ = [
     "ENDPOINTS",
     "SCHEME",
+    "AccountLockedError",
     "AdminSessionBusyError",
     "InvalidLoginError",
     "ParseError",

@@ -15,6 +15,7 @@ from custom_components.mycloud.config_flow import (
     normalize_host,
 )
 from custom_components.mycloud.wdnas import (
+    AccountLockedError,
     AdminSessionBusyError,
     InvalidLoginError,
     RequestFailedError,
@@ -161,6 +162,7 @@ async def test_user_flow_aborts_for_duplicate_unique_id(flow):
     ("exception", "expected"),
     [
         (AdminSessionBusyError("busy"), "admin_session_busy"),
+        (AccountLockedError("locked"), "account_locked"),
         (InvalidLoginError("bad"), "invalid_auth"),
         (RequestFailedError(401), "invalid_auth"),
         (RequestFailedError(500), "cannot_connect"),
@@ -287,6 +289,7 @@ async def test_reauth_restores_the_entry_when_login_fails(reauth_flow):
     ("exception", "expected"),
     [
         (AdminSessionBusyError("busy"), "admin_session_busy"),
+        (AccountLockedError("locked"), "account_locked"),
         (InvalidLoginError("bad"), "invalid_auth"),
         (RequestFailedError(401), "invalid_auth"),
         (RequestFailedError(500), "cannot_connect"),
@@ -581,6 +584,7 @@ async def test_reconfigure_rejects_invalid_host(reconfigure_flow):
     ("exception", "expected"),
     [
         (AdminSessionBusyError("busy"), "admin_session_busy"),
+        (AccountLockedError("locked"), "account_locked"),
         (InvalidLoginError("bad"), "invalid_auth"),
         (RequestFailedError(401), "invalid_auth"),
         (RequestFailedError(500), "cannot_connect"),
