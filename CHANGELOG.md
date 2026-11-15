@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-11-15
+
+### Fixed
+
+- A duplicate admin login is now reported as `admin_session_busy` instead of `invalid_auth`. The OS5 `nasAdmin` service answers a second login with HTTP 401 and the plain body `logged in from other IP address`; that text was not recognised, so Home Assistant opened re-authentication and kept submitting the password instead of waiting for the NAS to release the session. The body `max session time exceeded` is mapped the same way.
+- Regression tests cover the exact firmware 401 body and the session-timeout message. The README now documents both replies under the busy-session troubleshooting section.
+
 ## [3.1.0] - 2026-11-15
 
 ### Added

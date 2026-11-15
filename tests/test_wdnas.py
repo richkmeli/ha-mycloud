@@ -557,6 +557,8 @@ async def test_login_detects_busy_session_without_the_cookie(client):
         "The session is already open.",
         "Maximum number of sessions reached.",
         "Session limit exceeded.",
+        "logged in from other IP address",
+        "max session time exceeded",
         "Sei già connesso con un'altra sessione.",
         "Sessione già attiva.",
         "C'è un'altra sessione aperta.",
@@ -565,6 +567,18 @@ async def test_login_detects_busy_session_without_the_cookie(client):
 async def test_login_detects_expanded_busy_messages(client, body):
     """Localised and firmware-specific busy phrases are still recognised."""
     client.session = _FakeSession(_FakeResponse(403, text=body))
+
+    with pytest.raises(AdminSessionBusyError) as err:
+        await client.login()
+
+    assert isinstance(err.value, InvalidLoginError)
+
+
+async def test_firmware_multilogin_401_is_a_busy_session(client):
+    """The OS5 nasAdmin multi-login body is a busy session, not bad credentials."""
+    client.session = _FakeSession(
+        _FakeResponse(401, text="logged in from other IP address")
+    )
 
     with pytest.raises(AdminSessionBusyError) as err:
         await client.login()

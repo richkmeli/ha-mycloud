@@ -217,7 +217,10 @@ by a redirect and ignores a malformed `Set-Cookie` header instead of reporting
 the password as wrong. Starting with 3.0.8 the login accepts the opaque
 authentication cookies used by newer OS5 firmware (`fe97238703cba` and
 `ge41881ed8d9r`) as well as `PHPSESSID`, so a successful browser login is no
-longer rejected because the PHP session cookie is absent.
+longer rejected because the PHP session cookie is absent. Starting with 3.1.1
+the plain-text firmware replies `logged in from other IP address` and
+`max session time exceeded` are also reported as `admin_session_busy` instead
+of `invalid_auth`; earlier versions asked for the password again in that case.
 Update the integration before troubleshooting the NAS.
 
 If the NAS still reports the account as in use:

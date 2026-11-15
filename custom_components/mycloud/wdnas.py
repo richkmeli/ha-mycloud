@@ -72,6 +72,11 @@ _LOGIN_BUSY_RE = re.compile(
     r"|\bsession (?:is )?already (?:active|open)\b"
     r"|\bmaximum (?:number of )?sessions?\b"
     r"|\bsession limit\b"
+    # Firmware nasAdmin answers a second admin login with a 401 and this
+    # exact body. It is the same single-session limit, not a wrong password.
+    r"|\blogged in from (?:an? )?(?:other|another|different) "
+    r"(?:ip(?: address)?|device|client|host)\b"
+    r"|\bmax(?:imum)? session time exceeded\b"
     r"|\bgià connesso\b"
     r"|\bsessione già attiva\b"
     r"|\bun'altra sessione\b",
