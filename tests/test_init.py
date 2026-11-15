@@ -13,6 +13,7 @@ from homeassistant.exceptions import (
 )
 
 from custom_components.mycloud import (
+    _not_ready,
     async_migrate_unique_id,
     async_remove_config_entry_device,
     async_setup_entry,
@@ -49,6 +50,43 @@ def coordinator(nas_data):
     coordinator = MagicMock()
     coordinator.data = nas_data
     return coordinator
+
+
+def test_not_ready_carries_the_delay_when_supported(monkeypatch):
+    """A Home Assistant with retry_after support receives the delay."""
+
+    class SupportedNotReady(Exception):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args)
+            self.translation_key = kwargs.get("translation_key")
+            self.retry_after = kwargs.get("retry_after")
+
+    monkeypatch.setattr(
+        "custom_components.mycloud.ConfigEntryNotReady", SupportedNotReady
+    )
+
+    exc = _not_ready("account_locked", ACCOUNT_LOCKED_RETRY)
+
+    assert exc.translation_key == "account_locked"
+    assert exc.retry_after == ACCOUNT_LOCKED_RETRY
+
+
+def test_not_ready_falls_back_without_retry_after_support(monkeypatch):
+    """Home Assistant 2026.8 rejects retry_after, so it is omitted."""
+
+    class LegacyNotReady(Exception):
+        def __init__(self, *args, **kwargs):
+            if "retry_after" in kwargs:
+                raise TypeError("unsupported keyword")
+            super().__init__(*args)
+            self.translation_key = kwargs.get("translation_key")
+
+    monkeypatch.setattr("custom_components.mycloud.ConfigEntryNotReady", LegacyNotReady)
+
+    exc = _not_ready("admin_session_busy", ADMIN_SESSION_BUSY_RETRY)
+
+    assert exc.translation_key == "admin_session_busy"
+    assert not hasattr(exc, "retry_after")
 
 
 async def test_setup_stores_only_coordinator(hass, config_entry):
@@ -146,7 +184,8 @@ async def test_setup_busy_admin_session_is_retried(hass, config_entry):
             await async_setup_entry(hass, config_entry)
 
     assert err.value.translation_key == "admin_session_busy"
-    assert err.value.retry_after == ADMIN_SESSION_BUSY_RETRY
+    if hasattr(ConfigEntryNotReady, "retry_after"):
+        assert err.value.retry_after == ADMIN_SESSION_BUSY_RETRY
     assert config_entry.runtime_data is None
 
 
@@ -160,7 +199,8 @@ async def test_setup_temporary_account_block_is_retried(hass, config_entry):
             await async_setup_entry(hass, config_entry)
 
     assert err.value.translation_key == "account_locked"
-    assert err.value.retry_after == ACCOUNT_LOCKED_RETRY
+    if hasattr(ConfigEntryNotReady, "retry_after"):
+        assert err.value.retry_after == ACCOUNT_LOCKED_RETRY
     assert config_entry.runtime_data is None
 
 

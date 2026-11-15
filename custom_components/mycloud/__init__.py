@@ -37,6 +37,26 @@ from .wdnas import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _not_ready(translation_key: str, retry_after: float) -> ConfigEntryNotReady:
+    """Return a setup retry with the delay when Home Assistant supports it.
+
+    ``ConfigEntryNotReady.retry_after`` was added after Home Assistant 2026.8.
+    Passing the keyword to the older class raises ``TypeError``, so fall back
+    to the plain exception and let Home Assistant use its own backoff.
+    """
+    try:
+        return ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key=translation_key,
+            retry_after=retry_after,
+        )
+    except TypeError:
+        return ConfigEntryNotReady(
+            translation_domain=DOMAIN, translation_key=translation_key
+        )
+
+
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
@@ -103,19 +123,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> b
     except AccountLockedError as err:
         # Repeated failed logins temporarily block the account or the client
         # IP. Retry later instead of asking for the password again.
-        raise ConfigEntryNotReady(
-            translation_domain=DOMAIN,
-            translation_key="account_locked",
-            retry_after=ACCOUNT_LOCKED_RETRY,
-        ) from err
+        raise _not_ready("account_locked", ACCOUNT_LOCKED_RETRY) from err
     except AdminSessionBusyError as err:
         # Not a credential problem: another admin session is active. Retry
         # later instead of asking for reauth.
-        raise ConfigEntryNotReady(
-            translation_domain=DOMAIN,
-            translation_key="admin_session_busy",
-            retry_after=ADMIN_SESSION_BUSY_RETRY,
-        ) from err
+        raise _not_ready("admin_session_busy", ADMIN_SESSION_BUSY_RETRY) from err
     except InvalidLoginError as err:
         raise ConfigEntryAuthFailed(
             translation_domain=DOMAIN, translation_key="invalid_auth"
