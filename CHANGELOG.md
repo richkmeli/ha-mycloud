@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.3] - 2026-11-16
+
+### Fixed
+
+- Le azioni di alimentazione (Riavvia/Spegni) restituivano HTTP 403 sui CGI di sistema legacy (`/cgi-bin/hd_config.cgi`, `/cgi-bin/system_mgr.cgi`). Questi endpoint predate CORS e rifiutano gli header `Origin`/`Referer`/`X-Requested-With` che `nasAdmin` richiede sulle API `/nas/v1/auth`. Le power action ora omettono quegli header, mentre login, logout e tutte le richieste di dati continuano a ripeterli, mantenendo la correzione della 3.1.2 contro `request origin != token origin`.
+
 ## [3.1.2] - 2026-11-15
 
 ### Fixed

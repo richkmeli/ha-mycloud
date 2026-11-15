@@ -331,21 +331,24 @@ class WDNASClient:
             raise ValueError("An authenticated NAS session is required")
         return self.session
 
-    def _headers(self, *, form: bool = False) -> dict[str, str]:
+    def _headers(self, *, form: bool = False, origin: bool = True) -> dict[str, str]:
         """Return the headers used by the NAS API.
 
         OS5 binds the authentication token to the origin of the login
         request. Every authenticated request must repeat the same ``Origin``
         and ``Referer``, otherwise ``nasAdmin`` rejects it with
         ``request origin != token origin`` even though the cookies are valid.
+
+        The legacy CGI endpoints under ``/cgi-bin/`` (used by power actions)
+        predate CORS and reject these headers, so callers can disable them
+        with ``origin=False``.
         """
-        origin = f"{self.scheme}{self.host}"
-        headers = {
-            "Host": self.host,
-            "Origin": origin,
-            "Referer": f"{origin}/",
-            "X-Requested-With": "XMLHttpRequest",
-        }
+        headers = {"Host": self.host}
+        if origin:
+            origin_url = f"{self.scheme}{self.host}"
+            headers["Origin"] = origin_url
+            headers["Referer"] = f"{origin_url}/"
+            headers["X-Requested-With"] = "XMLHttpRequest"
         if form:
             headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
         return headers

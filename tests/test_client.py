@@ -385,6 +385,11 @@ async def test_power_action_checks_safety_then_shuts_down():
     assert session.calls[0][0] == "http://nas.local/cgi-bin/hd_config.cgi"
     assert session.calls[1][0] == "http://nas.local/cgi-bin/system_mgr.cgi"
     assert all(call[2]["Host"] == "nas.local" for call in session.calls)
+    # Legacy CGI endpoints must not receive Origin/Referer/X-Requested-With.
+    for _, _, headers in session.calls:
+        assert "Origin" not in headers
+        assert "Referer" not in headers
+        assert "X-Requested-With" not in headers
 
 
 async def test_power_action_uses_https_urls_when_requested():

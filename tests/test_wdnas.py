@@ -935,6 +935,18 @@ async def test_form_posts_keep_the_origin_and_form_content_type(client):
     )
 
 
+async def test_headers_without_origin_for_legacy_cgi_endpoints(client):
+    """Power action headers omit Origin/Referer/X-Requested-With for legacy CGI."""
+    headers = client._headers(form=True, origin=False)
+    assert headers == {
+        "Host": "nas.local:8080",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    }
+
+    headers = client._headers(origin=False)
+    assert headers == {"Host": "nas.local:8080"}
+
+
 async def test_endpoint_failure_logs_the_endpoint_and_body(client, caplog):
     """A rejected data request identifies the endpoint in the debug log."""
     caplog.set_level("DEBUG", logger="custom_components.mycloud.wdnas")

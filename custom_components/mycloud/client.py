@@ -131,7 +131,9 @@ class MyCloudClient(WDNASClient):
             raise ValueError(f"Unsupported power action: {action}") from err
 
         session = self._require_session()
-        headers = self._headers(form=True)
+        # Legacy CGI endpoints under /cgi-bin/ predate CORS and reject the
+        # Origin/Referer/X-Requested-With headers that nasAdmin requires.
+        headers = self._headers(form=True, origin=False)
 
         async with self._power_lock:
             safety_url = f"{self.scheme}{self.host}{_POWER_SAFETY_PATH}"
