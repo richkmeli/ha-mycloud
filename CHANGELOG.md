@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-11-15
+
+### Added
+
+- Dedicated `account_locked` error when the NAS temporarily blocks the admin account or the client IP after repeated failed logins. Setup retries with Home Assistant's backoff and the coordinator retries after 30 minutes, instead of asking for the password again.
+- `scripts/diagnose_login.py`, a standalone diagnostic that performs one login and prints the HTTP status, redirect chain, cookie attributes and response body with secrets redacted. It is not imported by the integration and is not a runtime dependency.
+- Login failures are logged at debug level with the HTTP status, redirect count, content type and a sanitized body, never the password or cookie values.
+- Tests for redirect cookies, malformed `Set-Cookie` headers, account blocks, expanded busy-session messages and redacted login logging.
+
+### Changed
+
+- Busy-session detection now also recognises "already logged in", "already connected", "another session", "maximum sessions", "session limit" and the corresponding Italian phrases.
+- The `invalid_auth` message now explains that another admin session can produce the same error, instead of implying that the password is always wrong.
+
+### Fixed
+
+- A login that sets `PHPSESSID` on an intermediate redirect response now authenticates correctly. Previously only the final response and the session cookie jar were checked, so a valid login could be reported as invalid credentials.
+- A malformed `Set-Cookie` header is ignored instead of failing the complete login.
+
 ## [3.0.2] - 2026-11-15
 
 ### Added
