@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.7] - 2026-11-15
+
+### Added
+
+- Dedicated `password_expired` and `not_admin` config-flow errors for the OS5 JSON codes `-1` and `-2`. These codes were previously reported as generic `invalid_auth`, even though the password or account needs a different fix.
+- Debug logs now name the failing data endpoint and its HTTP status, and confirm when a login is accepted. This separates a rejected login from a later `401`/`403` on `device_info` or `system_info`.
+
+### Fixed
+
+- Login requests now send the same `Origin`, `Referer` and `X-Requested-With` headers as the NAS web interface. Some firmware revisions validate the request origin or expect the dashboard's XHR headers.
+- A broken error body no longer replaces the HTTP status in a failed data request.
+
 ## [3.0.6] - 2026-11-15
 
 ### Added

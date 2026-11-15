@@ -36,6 +36,8 @@ from .wdnas import (
     AccountLockedError,
     AdminSessionBusyError,
     InvalidLoginError,
+    NotAdminError,
+    PasswordExpiredError,
     RequestFailedError,
 )
 
@@ -61,6 +63,10 @@ def _login_error_key(err: Exception) -> str:
         return "account_locked"
     if isinstance(err, AdminSessionBusyError):
         return "admin_session_busy"
+    if isinstance(err, PasswordExpiredError):
+        return "password_expired"
+    if isinstance(err, NotAdminError):
+        return "not_admin"
     if isinstance(err, InvalidLoginError):
         return "invalid_auth"
     if isinstance(err, RequestFailedError):
@@ -68,6 +74,16 @@ def _login_error_key(err: Exception) -> str:
     if isinstance(err, (TimeoutError, aiohttp.ClientError, OSError)):
         return "cannot_connect"
     return "unknown"
+
+
+def _log_validation_error(host: str, err: Exception) -> None:
+    """Log a redacted login failure so the form error can be diagnosed."""
+    _LOGGER.debug(
+        "NAS validation failed for %s: %s: %s",
+        host,
+        type(err).__name__,
+        err,
+    )
 
 
 def normalize_host(value: str) -> str:
@@ -179,6 +195,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     serial = str(device.get("serial_number") or "").strip()
                 except Exception as err:
                     errors["base"] = _login_error_key(err)
+                    _log_validation_error(host, err)
                     if errors["base"] == "unknown":
                         _LOGGER.exception("Unexpected error validating the NAS")
                 finally:
@@ -242,6 +259,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await client.async_connect()
                 except Exception as err:
                     errors["base"] = _login_error_key(err)
+                    _log_validation_error(entry.data[CONF_HOST], err)
                     if errors["base"] == "unknown":
                         _LOGGER.exception("Unexpected error during re-authentication")
                 finally:
@@ -304,6 +322,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         serial = str(device.get("serial_number") or "").strip()
                     except Exception as err:
                         errors["base"] = _login_error_key(err)
+                        _log_validation_error(host, err)
                         if errors["base"] == "unknown":
                             _LOGGER.exception("Unexpected error validating the NAS")
                     finally:

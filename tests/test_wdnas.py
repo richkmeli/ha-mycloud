@@ -16,6 +16,8 @@ from custom_components.mycloud.wdnas import (
     AccountLockedError,
     AdminSessionBusyError,
     InvalidLoginError,
+    NotAdminError,
+    PasswordExpiredError,
     RequestFailedError,
     WDNASClient,
     parse_uptime_text,
@@ -353,6 +355,9 @@ async def test_login_posts_the_base64_password_and_stores_the_cookie(client):
         "Content-Type": "application/json",
         "Accept": "application/json",
         "Host": "nas.local:8080",
+        "Origin": "http://nas.local:8080",
+        "Referer": "http://nas.local:8080/",
+        "X-Requested-With": "XMLHttpRequest",
     }
     assert client.phpsessid == "session-id"
 
@@ -507,6 +512,26 @@ async def test_json_error_code_wins_over_text_matches(client):
 
 
 @pytest.mark.parametrize(
+    ("body", "exception"),
+    [
+        ('{"error": "-1", "eula_status": "1"}', PasswordExpiredError),
+        ('{"error": -1, "eula_status": "1"}', PasswordExpiredError),
+        ('{"error": "-2", "eula_status": "1"}', NotAdminError),
+        ('{"error": -2, "eula_status": "1"}', NotAdminError),
+    ],
+)
+@pytest.mark.parametrize("status", [200, 403])
+async def test_login_detects_json_account_state_codes(client, body, exception, status):
+    """The OS5 ``-1`` and ``-2`` codes have dedicated login errors."""
+    client.session = _FakeSession(_FakeResponse(status, text=body))
+
+    with pytest.raises(exception) as err:
+        await client.login()
+
+    assert isinstance(err.value, InvalidLoginError)
+
+
+@pytest.mark.parametrize(
     "body",
     [
         '["-3"]',
@@ -514,7 +539,6 @@ async def test_json_error_code_wins_over_text_matches(client):
         '{"error": true}',
         '{"error": ""}',
         '{"error": 5.5}',
-        '{"error": "-1"}',
         '{"error": "0"}',
     ],
 )
@@ -698,6 +722,48 @@ async def test_get_text_reports_http_errors(client):
         await client._get_text("system_info")
 
     assert err.value.status_code == 500
+
+
+async def test_endpoint_failure_logs_the_endpoint_and_body(client, caplog):
+    """A rejected data request identifies the endpoint in the debug log."""
+    caplog.set_level("DEBUG", logger="custom_components.mycloud.wdnas")
+    client.session = _FakeSession(_FakeResponse(403, text="denied"))
+
+    with pytest.raises(RequestFailedError):
+        await client._get_text("system_info")
+
+    assert "NAS system_info request failed: HTTP 403" in caplog.text
+    assert "denied" in caplog.text
+
+
+async def test_endpoint_failure_tolerates_an_unreadable_body(client, caplog):
+    """A broken error body does not replace the HTTP status error."""
+    caplog.set_level("DEBUG", logger="custom_components.mycloud.wdnas")
+    client.session = _FakeSession(
+        _FakeResponse(500, error=aiohttp.ClientPayloadError("broken"))
+    )
+
+    with pytest.raises(RequestFailedError) as err:
+        await client._post_text("system_status", "cmd=resource", form=True)
+
+    assert err.value.status_code == 500
+    assert "<unreadable>" in caplog.text
+
+
+async def test_successful_login_is_logged(client, caplog):
+    """A successful login is distinguishable from a rejected one in the log."""
+    caplog.set_level("DEBUG", logger="custom_components.mycloud.wdnas")
+    client.session = _FakeSession(
+        _FakeResponse(
+            cookies={"PHPSESSID": _FakeCookie("session-id")},
+            set_cookies=["PHPSESSID=session-id; Path=/nas/v1/auth"],
+        )
+    )
+
+    await client.login()
+
+    assert "NAS login accepted: HTTP 200" in caplog.text
+    assert "session cookie present" in caplog.text
 
 
 async def test_post_text_reports_http_errors(client):

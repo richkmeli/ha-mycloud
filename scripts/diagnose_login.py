@@ -179,10 +179,14 @@ async def _diagnose(host: str, username: str, password: str, args) -> int:
     """Run one login attempt and return a process exit code."""
     url = f"{SCHEME}{host}{LOGIN_PATH}"
     encoded_password = base64.b64encode(password.encode("utf-8")).decode("utf-8")
+    origin = f"{SCHEME}{host}"
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "Host": host,
+        "Origin": origin,
+        "Referer": f"{origin}/",
+        "X-Requested-With": "XMLHttpRequest",
     }
 
     print(f"URL: {url}")

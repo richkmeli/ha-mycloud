@@ -101,6 +101,14 @@ class AccountLockedError(InvalidLoginError):
     """
 
 
+class PasswordExpiredError(InvalidLoginError):
+    """Raised when the NAS reports that the admin password has expired."""
+
+
+class NotAdminError(InvalidLoginError):
+    """Raised when the NAS account is not an administrator."""
+
+
 class RequestFailedError(Exception):
     """Raised when the NAS returns an unexpected response."""
 
@@ -156,6 +164,10 @@ def _login_error(body: str) -> InvalidLoginError | None:
         return AccountLockedError(_login_message(body))
     if code == "5":
         return AdminSessionBusyError(_login_message(body))
+    if code == "-1":
+        return PasswordExpiredError(_login_message(body))
+    if code == "-2":
+        return NotAdminError(_login_message(body))
     if _is_account_locked(body):
         return AccountLockedError(_login_message(body))
     if _is_admin_session_busy(body):
@@ -249,14 +261,31 @@ class WDNASClient:
             headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
         return headers
 
+    async def _raise_for_status(
+        self, endpoint: str, response: aiohttp.ClientResponse
+    ) -> None:
+        """Log a rejected request and raise its status code."""
+        if response.status == 200:
+            return
+        try:
+            body = await response.text()
+        except (aiohttp.ClientError, TimeoutError, OSError, UnicodeDecodeError):
+            body = "<unreadable>"
+        _LOGGER.debug(
+            "NAS %s request failed: HTTP %s, body: %s",
+            endpoint,
+            response.status,
+            _short_body(body),
+        )
+        raise RequestFailedError(response.status)
+
     async def _get_text(self, endpoint: str) -> str:
         """Perform an authenticated GET and return the response body."""
         session = self._require_session()
         async with session.get(
             self._url(endpoint), headers=self._headers()
         ) as response:
-            if response.status != 200:
-                raise RequestFailedError(response.status)
+            await self._raise_for_status(endpoint, response)
             return await response.text()
 
     async def _post_text(
@@ -269,8 +298,7 @@ class WDNASClient:
             data=data,
             headers=self._headers(form=form),
         ) as response:
-            if response.status != 200:
-                raise RequestFailedError(response.status)
+            await self._raise_for_status(endpoint, response)
             return await response.text()
 
     async def login(self) -> None:
@@ -279,10 +307,17 @@ class WDNASClient:
         encoded_password = base64.b64encode(self.password.encode("utf-8")).decode(
             "utf-8"
         )
+        origin = f"{SCHEME}{self.host}"
+        # Match the NAS web interface. Some firmware revisions validate the
+        # request origin or reject a request that does not look like the XHR
+        # sent by the dashboard.
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "Host": self.host,
+            "Origin": origin,
+            "Referer": f"{origin}/",
+            "X-Requested-With": "XMLHttpRequest",
         }
 
         async with session.post(
@@ -314,6 +349,11 @@ class WDNASClient:
             for key, morsel in cookies.items():
                 session.cookie_jar.update_cookies({key: morsel.value})
             self.phpsessid = session_cookie.value
+            _LOGGER.debug(
+                "NAS login accepted: HTTP %s, %s redirect(s), session cookie present",
+                response.status,
+                len(response.history),
+            )
 
     def _collect_login_cookies(
         self, response: aiohttp.ClientResponse
@@ -576,7 +616,9 @@ __all__ = [
     "AccountLockedError",
     "AdminSessionBusyError",
     "InvalidLoginError",
+    "NotAdminError",
     "ParseError",
+    "PasswordExpiredError",
     "RequestFailedError",
     "WDNASClient",
     "parse_uptime_text",

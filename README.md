@@ -193,9 +193,11 @@ reports the busy response with a dedicated `admin_session_busy` error and
 retries later, instead of asking for the password again. Starting with 3.0.6
 the integration reads the OS5 JSON error code directly, so `{"error": "5"}` is
 reported as a busy admin session even when the body contains no localized text.
-Starting with 3.0.3 the login also accepts a `PHPSESSID` cookie set by a
-redirect and ignores a malformed `Set-Cookie` header instead of reporting the
-password as wrong.
+Starting with 3.0.7 an expired domain password (`{"error": "-1"}`) is reported
+as `password_expired`, and a non-administrator account (`{"error": "-2"}`) as
+`not_admin`. Starting with 3.0.3 the login also accepts a `PHPSESSID` cookie set
+by a redirect and ignores a malformed `Set-Cookie` header instead of reporting
+the password as wrong.
 Update the integration before troubleshooting the NAS.
 
 If the NAS still reports the account as in use:
@@ -223,6 +225,30 @@ instead of opening re-authentication or continuing to submit the password.
    any stale admin session.
 3. Run the login diagnostic below only after the wait or the reboot, and only
    if the problem remains.
+
+### The browser can log in but Home Assistant cannot
+
+The browser and Home Assistant may not use the same URL or the same source IP:
+
+1. Test `http://<nas-address>` in the browser, not only a bookmark that opens
+   `https://`. The integration uses plain HTTP on the configured port. If the
+   NAS only serves the admin API over HTTPS, the integration cannot use that
+   endpoint; see the plain-HTTP limitation above.
+2. Check the NAS firewall or IP allowlist. Home Assistant may connect from a
+   different address than the computer that runs the browser, especially when
+   Home Assistant runs in Docker, a VM or another VLAN.
+3. Disable the integration entry, sign out of the NAS web interface and close
+   every WD app. Wait 2-3 minutes, then enable the entry and retry once. A
+   browser tab that still looks logged in can keep the single admin session
+   active.
+4. Enable debug logging and retry once. A rejected login logs
+   `NAS login failed: HTTP ...`; a login that succeeded but failed on a data
+   call logs `NAS <endpoint> request failed: HTTP ...`; a successful login logs
+   `NAS login accepted`. The endpoint name in the second line shows whether the
+   failure is on `device_info` or `system_info`.
+5. If the debug log still only shows `invalid_auth`, run the diagnostic below
+   from the Home Assistant host, not from the browser computer. It shows the
+   NAS response and source-IP-specific result.
 
 ### Diagnose a rejected login
 

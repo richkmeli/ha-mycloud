@@ -45,6 +45,8 @@
       "invalid_auth": "Invalid username or password, or another admin session is already active on the NAS. Close the NAS web interface and the WD apps, then try again.",
       "admin_session_busy": "Another admin session is already active on the NAS. Close the NAS web interface and the WD apps, wait a few minutes and try again.",
       "account_locked": "The NAS temporarily blocked the admin account after repeated login attempts. Wait at least 30-60 minutes without trying again, then retry. A NAS reboot also clears the block.",
+      "password_expired": "The NAS reports that the admin password has expired. Change it in the NAS web interface, then enter the new password here.",
+      "not_admin": "The NAS account is not an administrator. Reconfigure the integration with an account in the administrators group.",
       "cannot_connect": "Unable to connect to the NAS.",
       "unknown": "Unexpected error."
     },
