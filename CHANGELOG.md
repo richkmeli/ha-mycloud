@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.8] - 2026-11-15
+
+### Fixed
+
+- Login now accepts the authentication cookies used by newer OS5 firmware. The NAS admin API sets `fe97238703cba` and `ge41881ed8d9r` instead of `PHPSESSID`; the integration previously rejected an otherwise successful login because it required `PHPSESSID`. It now accepts any non-empty cookie from a 200 login response, while still preferring `PHPSESSID` on older firmware.
+- An explicit OS5 JSON error code is now rejected even when the login response is HTTP 200 and also sets a cookie.
+
+### Changed
+
+- The accepted-login and rejected-login debug lines now list the cookie names and JSON body keys, never their values. This identifies the firmware's cookie naming and the response shape in the next report.
+- The standalone login diagnostic now treats any non-empty session cookie as usable and lists the cookie names seen on the final response, the redirect chain and the cookie jar.
+- Fake-NAS tests now run the full login, data and logout cycle with `PHPSESSID`, `fe97238703cba` and `ge41881ed8d9r`, and cover a 200 response without a cookie and a 200 JSON error.
+
 ## [3.0.7] - 2026-11-15
 
 ### Added

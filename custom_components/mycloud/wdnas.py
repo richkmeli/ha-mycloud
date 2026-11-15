@@ -48,6 +48,16 @@ _UPTIME_RE = re.compile(
 )
 _UPTIME_ELEMENT_RE = re.compile(r"<uptime>(.*?)</uptime>", re.IGNORECASE | re.DOTALL)
 
+# Older OS5 firmware authenticates with the PHP session id. Newer firmware
+# sets two opaque cookies instead; both names are used by the nasAdmin
+# ``validateToken`` and ``logoutHandler`` functions. The order is only a
+# preference, login accepts any non-empty cookie the NAS sets.
+_PREFERRED_SESSION_COOKIES = (
+    "PHPSESSID",
+    "fe97238703cba",
+    "ge41881ed8d9r",
+)
+
 # OS5 returns this instead of a plain 401 when the single admin session is
 # already active. The firmware localizes the message, so match a few stable
 # fragments rather than the full sentence.
@@ -186,6 +196,55 @@ def _short_body(body: str) -> str:
     return " ".join(body.split())[:500]
 
 
+def _response_cookies(
+    response: aiohttp.ClientResponse,
+) -> http.cookies.SimpleCookie:
+    """Return every cookie set by a response and its redirect chain.
+
+    A malformed ``Set-Cookie`` header is ignored instead of failing the whole
+    login.
+    """
+    cookies = http.cookies.SimpleCookie()
+    for item in (*response.history, response):
+        for header in item.headers.getall("Set-Cookie", []):
+            try:
+                cookies.load(header)
+            except http.cookies.CookieError:
+                _LOGGER.debug("Ignoring a malformed NAS Set-Cookie header")
+    return cookies
+
+
+def _session_cookie(
+    cookies: http.cookies.SimpleCookie,
+) -> tuple[str, str] | None:
+    """Return the first non-empty authentication cookie, if any.
+
+    OS5 firmware may use ``PHPSESSID`` or two opaque cookie names. Known names
+    are preferred for a stable choice, then any other cookie is accepted so a
+    future firmware rename does not break login again.
+    """
+    for name in _PREFERRED_SESSION_COOKIES:
+        morsel = cookies.get(name)
+        if morsel is not None and morsel.value:
+            return name, morsel.value
+    for name in sorted(cookies):
+        morsel = cookies[name]
+        if morsel.value:
+            return name, morsel.value
+    return None
+
+
+def _json_keys(body: str) -> str:
+    """Return the JSON object keys for a debug log, never the values."""
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return "non-JSON"
+    if not isinstance(payload, dict):
+        return "non-object JSON"
+    return ", ".join(sorted(payload)) or "none"
+
+
 def _as_bool(value: str | None) -> bool:
     """Convert a NAS flag to a boolean without failing the whole payload.
 
@@ -242,6 +301,9 @@ class WDNASClient:
         self.username = username.lower()
         self.password = password
         self.session: aiohttp.ClientSession | None = None
+        # Kept for compatibility with the vendored upstream API. It holds the
+        # value of the cookie that authenticated the current session, which is
+        # not necessarily PHPSESSID on newer OS5 firmware.
         self.phpsessid: str | None = None
 
     def _url(self, endpoint: str) -> str:
@@ -326,18 +388,23 @@ class WDNASClient:
             headers=headers,
         ) as response:
             body = await response.text()
+            error = _login_error(body)
+            # A JSON error code is authoritative even on HTTP 200. The text
+            # heuristics are only used when no cookie authenticates the
+            # session, so a success body cannot be misread as a busy session.
+            if error is not None and (
+                response.status != 200 or _login_error_code(body) is not None
+            ):
+                self._log_login_failure(response, body)
+                raise error
             if response.status != 200:
                 self._log_login_failure(response, body)
-                error = _login_error(body)
-                if error is not None:
-                    raise error
                 raise RequestFailedError(response.status)
 
             cookies = self._collect_login_cookies(response)
-            session_cookie = cookies.get("PHPSESSID")
-            if session_cookie is None or not session_cookie.value:
+            session_cookie = _session_cookie(cookies)
+            if session_cookie is None:
                 self._log_login_failure(response, body)
-                error = _login_error(body)
                 if error is not None:
                     raise error
                 raise InvalidLoginError(
@@ -347,49 +414,49 @@ class WDNASClient:
             # The NAS scopes some cookies to the login path. Re-add every
             # collected cookie with no path so the data endpoints receive it.
             for key, morsel in cookies.items():
-                session.cookie_jar.update_cookies({key: morsel.value})
-            self.phpsessid = session_cookie.value
+                if morsel.value:
+                    session.cookie_jar.update_cookies({key: morsel.value})
+            self.phpsessid = session_cookie[1]
             _LOGGER.debug(
-                "NAS login accepted: HTTP %s, %s redirect(s), session cookie present",
+                "NAS login accepted: HTTP %s, %s redirect(s), cookies: %s, "
+                "body keys: %s",
                 response.status,
                 len(response.history),
+                ", ".join(sorted(cookies)) or "none",
+                _json_keys(body),
             )
 
     def _collect_login_cookies(
         self, response: aiohttp.ClientResponse
     ) -> http.cookies.SimpleCookie:
-        """Return the login cookies, including cookies set on a redirect.
+        """Return the login cookies from the response, redirects and jar.
 
-        Some firmware answers the login POST with a redirect and sets
-        ``PHPSESSID`` on that intermediate response. ``response.cookies`` only
-        contains the final response, so the history and the session jar are
-        checked as well. A malformed ``Set-Cookie`` header is ignored instead
-        of failing the whole login.
+        Some firmware answers the login POST with a redirect and sets the
+        authentication cookie on that intermediate response. OS5 may use
+        ``PHPSESSID`` or two opaque cookie names. Non-empty response cookies
+        take precedence over the jar; the jar fills in values that the response
+        did not repeat.
         """
-        cookies = http.cookies.SimpleCookie()
-        for item in (*response.history, response):
-            for header in item.headers.getall("Set-Cookie", []):
-                try:
-                    cookies.load(header)
-                except http.cookies.CookieError:
-                    _LOGGER.debug("Ignoring a malformed NAS Set-Cookie header")
-
+        cookies = _response_cookies(response)
         session = self._require_session()
-        session_cookie = cookies.get("PHPSESSID")
-        if session_cookie is None or not session_cookie.value:
-            for key, morsel in session.cookie_jar.filter_cookies(
-                URL(self._url("login"))
-            ).items():
+        for key, morsel in session.cookie_jar.filter_cookies(
+            URL(self._url("login"))
+        ).items():
+            if key not in cookies or not cookies[key].value:
                 cookies[key] = morsel.value
         return cookies
 
     def _log_login_failure(self, response: aiohttp.ClientResponse, body: str) -> None:
-        """Log a rejected login without logging the password or cookies."""
+        """Log a rejected login without logging the password or cookie values."""
+        cookies = _response_cookies(response)
         _LOGGER.debug(
-            "NAS login failed: HTTP %s, %s redirect(s), content-type %s, body: %s",
+            "NAS login failed: HTTP %s, %s redirect(s), content-type %s, "
+            "cookies: %s, body keys: %s, body: %s",
             response.status,
             len(response.history),
             response.headers.get("Content-Type", "unknown"),
+            ", ".join(sorted(cookies)) or "none",
+            _json_keys(body),
             _short_body(body),
         )
 

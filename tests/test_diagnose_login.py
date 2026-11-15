@@ -17,16 +17,23 @@ def test_redact_body_hides_passwords_tokens_and_cookies():
     """The body excerpt cannot leak the password or common token fields."""
     body = (
         "login failed for password=s3cr3t-passw0rd "
-        "PHPSESSID=abc123 token: xyz789 "
+        "PHPSESSID=abc123 fe97238703cba=def456 token: xyz789 "
         "base64 czNjcjN0LXBhc3N3MHJk"
     )
 
     excerpt = diagnose_login._redact_body(body, 500, "s3cr3t-passw0rd")
 
-    for secret in ("s3cr3t-passw0rd", "abc123", "xyz789", "czNjcjN0LXBhc3N3MHJk"):
+    for secret in (
+        "s3cr3t-passw0rd",
+        "abc123",
+        "def456",
+        "xyz789",
+        "czNjcjN0LXBhc3N3MHJk",
+    ):
         assert secret not in excerpt
     assert "password=<redacted>" in excerpt
     assert "PHPSESSID=<redacted>" in excerpt
+    assert "fe97238703cba=<redacted>" in excerpt
 
 
 def test_redact_body_truncates_long_payloads():
@@ -51,14 +58,20 @@ def test_redact_location_hides_relative_and_absolute_queries():
 
 
 def test_has_session_cookie_requires_a_non_empty_value():
-    """An empty PHPSESSID is not a usable session."""
+    """An empty cookie is not a usable session, but any auth name is."""
     empty = http.cookies.SimpleCookie()
     empty.load("PHPSESSID=; Path=/")
     valid = http.cookies.SimpleCookie()
     valid.load("PHPSESSID=session; Path=/")
+    opaque = http.cookies.SimpleCookie()
+    opaque.load("fe97238703cba=session; Path=/")
+    empty_opaque = http.cookies.SimpleCookie()
+    empty_opaque.load("ge41881ed8d9r=; Path=/")
 
     assert diagnose_login._has_session_cookie(empty) is False
     assert diagnose_login._has_session_cookie(valid) is True
+    assert diagnose_login._has_session_cookie(opaque) is True
+    assert diagnose_login._has_session_cookie(empty_opaque) is False
     assert diagnose_login._has_session_cookie(http.cookies.SimpleCookie()) is False
 
 

@@ -20,6 +20,7 @@ from custom_components.mycloud.wdnas import (
     PasswordExpiredError,
     RequestFailedError,
     WDNASClient,
+    _json_keys,
     parse_uptime_text,
 )
 
@@ -305,6 +306,14 @@ def test_parse_uptime_text_supports_plural_and_short_forms():
     assert parse_uptime_text("not an uptime") is None
 
 
+def test_json_keys_describes_the_body_without_its_values():
+    """The log helper summarises JSON shapes without printing secrets."""
+    assert _json_keys('{"b": 2, "a": 1}') == "a, b"
+    assert _json_keys("{}") == "none"
+    assert _json_keys("plain text") == "non-JSON"
+    assert _json_keys('["secret"]') == "non-object JSON"
+
+
 def test_endpoints_cover_every_used_os5_operation():
     """Every operation called by the integration has a fixed OS5 path."""
     assert SCHEME == "http://"
@@ -333,7 +342,7 @@ def test_request_error_exposes_status_and_message():
 
 
 async def test_login_posts_the_base64_password_and_stores_the_cookie(client):
-    """Login uses the OS5 JSON payload and keeps the PHP session id."""
+    """Login uses the OS5 JSON payload and keeps the session cookie."""
     client.session = _FakeSession(
         _FakeResponse(
             cookies={"PHPSESSID": _FakeCookie("session-id")},
@@ -360,6 +369,106 @@ async def test_login_posts_the_base64_password_and_stores_the_cookie(client):
         "X-Requested-With": "XMLHttpRequest",
     }
     assert client.phpsessid == "session-id"
+
+
+@pytest.mark.parametrize("cookie_name", ["fe97238703cba", "ge41881ed8d9r"])
+async def test_login_accepts_each_opaque_os5_cookie(client, cookie_name):
+    """Newer OS5 firmware sets opaque cookies instead of PHPSESSID."""
+    client.session = _FakeSession(
+        _FakeResponse(
+            set_cookies=[f"{cookie_name}=opaque-token; Path=/nas/v1/auth; HttpOnly"]
+        )
+    )
+
+    await client.login()
+
+    assert client.phpsessid == "opaque-token"
+    assert client.session.cookie_jar.cookies == {cookie_name: "opaque-token"}
+
+
+async def test_login_accepts_an_unknown_auth_cookie(client):
+    """An unknown non-empty cookie is accepted for future firmware names."""
+    client.session = _FakeSession(
+        _FakeResponse(set_cookies=["new_cookie=new-token; Path=/nas/v1/auth"])
+    )
+
+    await client.login()
+
+    assert client.phpsessid == "new-token"
+    assert client.session.cookie_jar.cookies == {"new_cookie": "new-token"}
+
+
+async def test_login_prefers_phpsessid_and_keeps_all_cookies(client):
+    """Known cookie names produce a stable session id when several are set."""
+    client.session = _FakeSession(
+        _FakeResponse(
+            set_cookies=[
+                "ge41881ed8d9r=refresh-token; Path=/nas/v1/auth",
+                "PHPSESSID=php-session; Path=/nas/v1/auth",
+                "fe97238703cba=access-token; Path=/nas/v1/auth",
+            ]
+        )
+    )
+
+    await client.login()
+
+    assert client.phpsessid == "php-session"
+    assert client.session.cookie_jar.cookies == {
+        "PHPSESSID": "php-session",
+        "fe97238703cba": "access-token",
+        "ge41881ed8d9r": "refresh-token",
+    }
+
+
+async def test_login_keeps_response_and_jar_cookies(client):
+    """Cookies from the response and the jar are merged for the session."""
+    client.session = _FakeSession(
+        _FakeResponse(set_cookies=["fe97238703cba=access-token; Path=/nas/v1/auth"])
+    )
+    client.session.cookie_jar.cookies["ge41881ed8d9r"] = "refresh-token"
+
+    await client.login()
+
+    assert client.phpsessid == "access-token"
+    assert client.session.cookie_jar.cookies == {
+        "fe97238703cba": "access-token",
+        "ge41881ed8d9r": "refresh-token",
+    }
+
+
+async def test_login_rejects_a_json_error_even_when_a_cookie_is_set(client):
+    """An explicit OS5 error code wins over a cookie on HTTP 200."""
+    client.session = _FakeSession(
+        _FakeResponse(
+            text='{"error": "5", "eula_status": "3"}',
+            set_cookies=["fe97238703cba=access-token; Path=/nas/v1/auth"],
+        )
+    )
+
+    with pytest.raises(AdminSessionBusyError):
+        await client.login()
+
+
+async def test_login_accepts_cookie_names_and_body_keys_without_values(client, caplog):
+    """The debug log names cookies and JSON keys but never their values."""
+    caplog.set_level("DEBUG", logger="custom_components.mycloud.wdnas")
+    client.session = _FakeSession(
+        _FakeResponse(
+            text='{"eula_status": "1", "booting": false}',
+            set_cookies=[
+                "fe97238703cba=secret-access; Path=/nas/v1/auth",
+                "ge41881ed8d9r=secret-refresh; Path=/nas/v1/auth",
+            ],
+        )
+    )
+
+    await client.login()
+
+    assert "NAS login accepted" in caplog.text
+    assert "cookies: fe97238703cba, ge41881ed8d9r" in caplog.text
+    assert "body keys: booting, eula_status" in caplog.text
+    assert "secret-access" not in caplog.text
+    assert "secret-refresh" not in caplog.text
 
 
 async def test_login_reports_http_errors(client):
@@ -578,7 +687,7 @@ async def test_login_uses_a_cookie_already_in_the_jar(client):
 
 
 async def test_login_replaces_an_empty_session_cookie_from_the_jar(client):
-    """An empty PHPSESSID header does not hide a valid cookie in the jar."""
+    """An empty session cookie header does not hide a valid cookie in the jar."""
     client.session = _FakeSession(
         _FakeResponse(set_cookies=["PHPSESSID=; Path=/nas/v1/auth"])
     )
@@ -627,8 +736,29 @@ async def test_login_failure_is_logged_without_the_password(client, caplog):
     assert "HTTP 401" in caplog.text
     assert "0 redirect(s)" in caplog.text
     assert "text/html" in caplog.text
+    assert "cookies: none" in caplog.text
+    assert "body keys: non-JSON" in caplog.text
     assert "Invalid username or password" in caplog.text
     assert "secret" not in caplog.text
+
+
+async def test_login_failure_log_names_cookies_and_json_keys(client, caplog):
+    """A rejected login logs cookie names and JSON keys without their values."""
+    caplog.set_level("DEBUG", logger="custom_components.mycloud.wdnas")
+    client.session = _FakeSession(
+        _FakeResponse(
+            403,
+            text='{"error": "-1", "eula_status": "1"}',
+            set_cookies=["ge41881ed8d9r=secret-refresh; Path=/nas/v1/auth"],
+        )
+    )
+
+    with pytest.raises(PasswordExpiredError):
+        await client.login()
+
+    assert "cookies: ge41881ed8d9r" in caplog.text
+    assert "body keys: error, eula_status" in caplog.text
+    assert "secret-refresh" not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -649,7 +779,7 @@ async def test_login_keeps_bad_credentials_separate_from_busy(client, body):
 
 
 async def test_login_rejects_an_empty_session_cookie(client):
-    """A Set-Cookie header with an empty PHPSESSID is not authenticated."""
+    """A Set-Cookie header with an empty session cookie is not authenticated."""
     client.session = _FakeSession(
         _FakeResponse(set_cookies=["PHPSESSID=; Path=/nas/v1/auth"])
     )
@@ -659,7 +789,7 @@ async def test_login_rejects_an_empty_session_cookie(client):
 
 
 async def test_login_requires_the_session_cookie(client):
-    """A 200 response without PHPSESSID is not an authenticated session."""
+    """A 200 response without an authentication cookie is not a session."""
     client.session = _FakeSession(_FakeResponse())
 
     with pytest.raises(InvalidLoginError):
@@ -763,7 +893,8 @@ async def test_successful_login_is_logged(client, caplog):
     await client.login()
 
     assert "NAS login accepted: HTTP 200" in caplog.text
-    assert "session cookie present" in caplog.text
+    assert "cookies: PHPSESSID" in caplog.text
+    assert "body keys: non-JSON" in caplog.text
 
 
 async def test_post_text_reports_http_errors(client):

@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestServer
 
 from custom_components.mycloud.client import (
     AdminSessionBusyError,
+    InvalidLoginError,
     MyCloudClient,
 )
 
@@ -41,13 +42,16 @@ SYSTEM_INFO_XML = """
 class FakeNAS:
     """Minimal OS5 API that accepts one admin session at a time."""
 
-    def __init__(self) -> None:
+    def __init__(self, cookie_name: str = "PHPSESSID") -> None:
         """Initialize the fake NAS state."""
+        self.cookie_name = cookie_name
         self.active_session: str | None = None
         self.logins = 0
         self.logouts = 0
         self.logout_delay = 0.0
         self.host = ""
+        self.auth_cookie = True
+        self.login_error: str | None = None
 
     async def login(self, request: web.Request) -> web.Response:
         """Authenticate or report that another admin session is active."""
@@ -55,6 +59,8 @@ class FakeNAS:
         password = base64.b64encode(b"secret").decode()
         if body.get("username") != "admin" or body.get("password") != password:
             return web.json_response({"error": "invalid credentials"}, status=401)
+        if self.login_error is not None:
+            return web.json_response({"error": self.login_error})
         if self.active_session is not None:
             return web.json_response(
                 {"error": "The user account entered is currently in use."},
@@ -66,14 +72,17 @@ class FakeNAS:
         response = web.json_response({"ok": True})
         # OS5 scopes the cookie to the login path; the client must re-add it
         # without a path so the data endpoints receive it too.
-        response.set_cookie("PHPSESSID", self.active_session, path="/nas/v1/auth")
+        if self.auth_cookie:
+            response.set_cookie(
+                self.cookie_name, self.active_session, path="/nas/v1/auth"
+            )
         return response
 
     async def logout(self, request: web.Request) -> web.Response:
         """Release the admin session when the cookie matches."""
         if self.logout_delay:
             await asyncio.sleep(self.logout_delay)
-        if request.cookies.get("PHPSESSID") != self.active_session:
+        if request.cookies.get(self.cookie_name) != self.active_session:
             return web.Response(status=403)
         self.active_session = None
         self.logouts += 1
@@ -81,15 +90,15 @@ class FakeNAS:
 
     async def system_info(self, request: web.Request) -> web.Response:
         """Return a small system payload to authenticated clients."""
-        if request.cookies.get("PHPSESSID") != self.active_session:
+        if request.cookies.get(self.cookie_name) != self.active_session:
             return web.Response(status=403)
         return web.Response(text=SYSTEM_INFO_XML)
 
 
-@pytest.fixture
-async def fake_nas():
-    """Start the fake NAS on a local ephemeral port."""
-    nas = FakeNAS()
+@pytest.fixture(params=["PHPSESSID", "fe97238703cba", "ge41881ed8d9r"])
+async def fake_nas(request):
+    """Start the fake NAS with each OS5 authentication cookie name."""
+    nas = FakeNAS(cookie_name=request.param)
     app = web.Application()
     app.router.add_post("/nas/v1/auth", nas.login)
     app.router.add_delete("/nas/v1/auth", nas.logout)
@@ -139,6 +148,30 @@ async def test_close_times_out_a_hanging_logout(fake_nas):
     with patch("custom_components.mycloud.client._LOGOUT_TIMEOUT", 0.01):
         async with asyncio.timeout(0.5):
             await client.async_close()
+
+    assert client.session is None
+    assert client.phpsessid is None
+
+
+async def test_login_without_any_cookie_is_rejected(fake_nas):
+    """A 200 login response without an authentication cookie is not usable."""
+    fake_nas.auth_cookie = False
+    client = MyCloudClient("admin", "secret", fake_nas.host)
+
+    with pytest.raises(InvalidLoginError):
+        await client.async_connect()
+
+    assert client.session is None
+    assert client.phpsessid is None
+
+
+async def test_json_error_on_http_200_is_reported(fake_nas):
+    """An OS5 JSON error is not hidden by the HTTP 200 status."""
+    fake_nas.login_error = "5"
+    client = MyCloudClient("admin", "secret", fake_nas.host)
+
+    with pytest.raises(AdminSessionBusyError):
+        await client.async_connect()
 
     assert client.session is None
     assert client.phpsessid is None

@@ -197,7 +197,10 @@ Starting with 3.0.7 an expired domain password (`{"error": "-1"}`) is reported
 as `password_expired`, and a non-administrator account (`{"error": "-2"}`) as
 `not_admin`. Starting with 3.0.3 the login also accepts a `PHPSESSID` cookie set
 by a redirect and ignores a malformed `Set-Cookie` header instead of reporting
-the password as wrong.
+the password as wrong. Starting with 3.0.8 the login accepts the opaque
+authentication cookies used by newer OS5 firmware (`fe97238703cba` and
+`ge41881ed8d9r`) as well as `PHPSESSID`, so a successful browser login is no
+longer rejected because the PHP session cookie is absent.
 Update the integration before troubleshooting the NAS.
 
 If the NAS still reports the account as in use:
@@ -245,7 +248,8 @@ The browser and Home Assistant may not use the same URL or the same source IP:
    `NAS login failed: HTTP ...`; a login that succeeded but failed on a data
    call logs `NAS <endpoint> request failed: HTTP ...`; a successful login logs
    `NAS login accepted`. The endpoint name in the second line shows whether the
-   failure is on `device_info` or `system_info`.
+   failure is on `device_info` or `system_info`. The login lines also list the
+   cookie names and JSON body keys, never their values.
 5. If the debug log still only shows `invalid_auth`, run the diagnostic below
    from the Home Assistant host, not from the browser computer. It shows the
    NAS response and source-IP-specific result.

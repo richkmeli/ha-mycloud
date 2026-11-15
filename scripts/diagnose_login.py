@@ -39,7 +39,8 @@ DEFAULT_TIMEOUT = 30
 DEFAULT_BODY_LIMIT = 2000
 
 _SECRET_RE = re.compile(
-    r"(?i)(PHPSESSID|session[_-]?id|csrf[_-]?token|token|password|pwd)"
+    r"(?i)(PHPSESSID|fe97238703cba|ge41881ed8d9r"
+    r"|session[_-]?id|csrf[_-]?token|token|password|pwd)"
     r"([\"'\s:=]+)"
     r"[^\"'\s<>,;&]+"
 )
@@ -114,27 +115,31 @@ def _print_redirects(response: aiohttp.ClientResponse) -> None:
 
 
 def _has_session_cookie(cookies: http.cookies.SimpleCookie) -> bool:
-    """Return True when a cookie set contains a non-empty PHPSESSID."""
-    morsel = cookies.get("PHPSESSID")
-    return morsel is not None and bool(morsel.value)
+    """Return True when a cookie set contains a non-empty session cookie.
+
+    OS5 may use ``PHPSESSID`` or opaque names. Any non-empty cookie is treated
+    as usable, matching the integration's login check.
+    """
+    return any(bool(morsel.value) for morsel in cookies.values())
 
 
 def _print_cookie_sources(
     response: aiohttp.ClientResponse, session: aiohttp.ClientSession
 ) -> None:
-    """Show where a PHPSESSID was visible to the client."""
-    redirect_names: set[str] = set()
-    for item in response.history:
-        redirect_names.update(item.cookies.keys())
-    jar_names = sorted(morsel.key for morsel in session.cookie_jar)
+    """Show where a usable session cookie was visible to the client."""
+    redirect_names = {
+        name
+        for item in response.history
+        for name, morsel in item.cookies.items()
+        if morsel.value
+    }
+    final_names = {name for name, morsel in response.cookies.items() if morsel.value}
+    jar_names = sorted(morsel.key for morsel in session.cookie_jar if morsel.value)
 
-    print("\nPHPSESSID sources:")
-    print(
-        f"  final response: {'yes' if _has_session_cookie(response.cookies) else 'no'}"
-    )
-    print(f"  redirect chain: {'yes' if 'PHPSESSID' in redirect_names else 'no'}")
-    print(f"  cookie jar: {'yes' if 'PHPSESSID' in jar_names else 'no'}")
-    print(f"  all jar cookie names: {', '.join(jar_names) or '<none>'}")
+    print("\nSession cookie sources:")
+    print(f"  final response: {', '.join(sorted(final_names)) or 'none'}")
+    print(f"  redirect chain: {', '.join(sorted(redirect_names)) or 'none'}")
+    print(f"  cookie jar: {', '.join(jar_names) or 'none'}")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -219,10 +224,7 @@ async def _diagnose(host: str, username: str, password: str, args) -> int:
                     or any(
                         _has_session_cookie(item.cookies) for item in response.history
                     )
-                    or any(
-                        morsel.key == "PHPSESSID" and bool(morsel.value)
-                        for morsel in session.cookie_jar
-                    )
+                    or any(morsel.value for morsel in session.cookie_jar)
                 )
                 print(
                     f"\nLogin usable by the integration: {'yes' if success else 'no'}"
