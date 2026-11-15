@@ -206,6 +206,9 @@ async def test_close_releases_the_admin_session_before_closing():
                 "Accept": "application/json",
                 "Content-Type": "application/json",
                 "Host": "nas.local",
+                "Origin": "http://nas.local",
+                "Referer": "http://nas.local/",
+                "X-Requested-With": "XMLHttpRequest",
             },
         )
     ]

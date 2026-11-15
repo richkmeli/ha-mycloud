@@ -45,6 +45,17 @@ SYSTEM_INFO_XML = """
 """
 
 
+def _request_origin(request: web.Request) -> str | None:
+    """Return the origin carried by an OS5 request, like nasAdmin does."""
+    origin = request.headers.get("Origin")
+    if origin:
+        return origin.rstrip("/")
+    referer = request.headers.get("Referer")
+    if not referer:
+        return None
+    return "/".join(referer.split("/")[:3])
+
+
 class FakeNAS:
     """Minimal OS5 API that accepts one admin session at a time."""
 
@@ -52,6 +63,7 @@ class FakeNAS:
         """Initialize the fake NAS state."""
         self.cookie_name = cookie_name
         self.active_session: str | None = None
+        self.token_origin: str | None = None
         self.logins = 0
         self.logouts = 0
         self.logout_delay = 0.0
@@ -74,6 +86,7 @@ class FakeNAS:
             )
 
         self.active_session = "session-1"
+        self.token_origin = _request_origin(request)
         self.logins += 1
         response = web.json_response({"ok": True})
         # OS5 scopes the cookie to the login path; the client must re-add it
@@ -85,17 +98,22 @@ class FakeNAS:
         return response
 
     async def logout(self, request: web.Request) -> web.Response:
-        """Release the admin session when the cookie matches."""
+        """Release the admin session when cookie and origin match."""
         if self.logout_delay:
             await asyncio.sleep(self.logout_delay)
+        if _request_origin(request) != self.token_origin:
+            return web.Response(status=401, text="request origin != token origin")
         if request.cookies.get(self.cookie_name) != self.active_session:
             return web.Response(status=403)
         self.active_session = None
+        self.token_origin = None
         self.logouts += 1
         return web.Response(status=204)
 
     async def system_info(self, request: web.Request) -> web.Response:
         """Return a small system payload to authenticated clients."""
+        if _request_origin(request) != self.token_origin:
+            return web.Response(status=401, text="request origin != token origin")
         if request.cookies.get(self.cookie_name) != self.active_session:
             return web.Response(status=403)
         return web.Response(text=SYSTEM_INFO_XML)

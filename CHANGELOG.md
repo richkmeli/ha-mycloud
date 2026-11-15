@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.2] - 2026-11-15
+
+### Fixed
+
+- Login on OS5 firmware that binds the authentication token to the request origin no longer fails after an accepted login. `nasAdmin` derives the token origin from `Origin`/`Referer` during `POST /nas/v1/auth`, then rejects every later request whose origin differs with `request origin != token origin`. The integration sent those headers only on login, so `device_info` and `system_info` were answered with HTTP 401 and Home Assistant reported `invalid_auth` even though the NAS log showed `"operation":"login","status":"success"`. Every authenticated request, including form posts, power actions and logout, now repeats the login's `Origin`, `Referer` and `X-Requested-With`.
+- The fake-NAS contract tests now enforce the token origin on data requests and logout, like the real firmware, so a future header regression fails the suite.
+
 ## [3.1.1] - 2026-11-15
 
 ### Fixed

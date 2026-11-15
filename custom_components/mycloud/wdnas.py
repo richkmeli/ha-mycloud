@@ -332,8 +332,20 @@ class WDNASClient:
         return self.session
 
     def _headers(self, *, form: bool = False) -> dict[str, str]:
-        """Return the headers used by the NAS API."""
-        headers = {"Host": self.host}
+        """Return the headers used by the NAS API.
+
+        OS5 binds the authentication token to the origin of the login
+        request. Every authenticated request must repeat the same ``Origin``
+        and ``Referer``, otherwise ``nasAdmin`` rejects it with
+        ``request origin != token origin`` even though the cookies are valid.
+        """
+        origin = f"{self.scheme}{self.host}"
+        headers = {
+            "Host": self.host,
+            "Origin": origin,
+            "Referer": f"{origin}/",
+            "X-Requested-With": "XMLHttpRequest",
+        }
         if form:
             headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
         return headers
@@ -384,18 +396,12 @@ class WDNASClient:
         encoded_password = base64.b64encode(self.password.encode("utf-8")).decode(
             "utf-8"
         )
-        origin = f"{self.scheme}{self.host}"
         # Match the NAS web interface. Some firmware revisions validate the
         # request origin or reject a request that does not look like the XHR
         # sent by the dashboard.
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Host": self.host,
-            "Origin": origin,
-            "Referer": f"{origin}/",
-            "X-Requested-With": "XMLHttpRequest",
-        }
+        headers = self._headers()
+        headers["Content-Type"] = "application/json"
+        headers["Accept"] = "application/json"
 
         async with session.post(
             self._url("login"),
@@ -484,13 +490,12 @@ class WDNASClient:
         without waiting for the old session to expire.
         """
         session = self._require_session()
+        headers = self._headers()
+        headers["Content-Type"] = "application/json"
+        headers["Accept"] = "application/json"
         async with session.delete(
             self._url("logout"),
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Host": self.host,
-            },
+            headers=headers,
         ) as response:
             if not 200 <= response.status < 300:
                 raise RequestFailedError(response.status)

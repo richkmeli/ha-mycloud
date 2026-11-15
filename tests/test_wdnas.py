@@ -873,6 +873,9 @@ async def test_logout_deletes_the_server_session(client):
         "Accept": "application/json",
         "Content-Type": "application/json",
         "Host": "nas.local:8080",
+        "Origin": "http://nas.local:8080",
+        "Referer": "http://nas.local:8080/",
+        "X-Requested-With": "XMLHttpRequest",
     }
     assert client.phpsessid is None
 
@@ -904,6 +907,32 @@ async def test_get_text_reports_http_errors(client):
         await client._get_text("system_info")
 
     assert err.value.status_code == 500
+
+
+async def test_authenticated_requests_repeat_the_login_origin(client):
+    """Data requests carry the origin the OS5 authentication token is bound to."""
+    client.session = _FakeSession(_FakeResponse(text="<config/>"))
+
+    await client._get_text("system_info")
+
+    headers = client.session.calls[0][2]["headers"]
+    assert headers["Origin"] == "http://nas.local:8080"
+    assert headers["Referer"] == "http://nas.local:8080/"
+    assert headers["X-Requested-With"] == "XMLHttpRequest"
+
+
+async def test_form_posts_keep_the_origin_and_form_content_type(client):
+    """Form posts repeat the origin and keep the form content type."""
+    client.session = _FakeSession(_FakeResponse(text="<config/>"))
+
+    await client._post_text("device_info", "cmd=test", form=True)
+
+    headers = client.session.calls[0][2]["headers"]
+    assert headers["Origin"] == "http://nas.local:8080"
+    assert headers["Referer"] == "http://nas.local:8080/"
+    assert headers["Content-Type"] == (
+        "application/x-www-form-urlencoded; charset=UTF-8"
+    )
 
 
 async def test_endpoint_failure_logs_the_endpoint_and_body(client, caplog):
@@ -1104,7 +1133,12 @@ async def test_share_names_returns_the_share_list(client):
         "http://nas.local:8080/web/get_share_name_list.php",
     )
     assert kwargs["data"] is None
-    assert kwargs["headers"] == {"Host": "nas.local:8080"}
+    assert kwargs["headers"] == {
+        "Host": "nas.local:8080",
+        "Origin": "http://nas.local:8080",
+        "Referer": "http://nas.local:8080/",
+        "X-Requested-With": "XMLHttpRequest",
+    }
 
 
 async def test_share_names_rejects_unsuccessful_responses(client):

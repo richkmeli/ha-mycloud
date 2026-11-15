@@ -221,7 +221,12 @@ longer rejected because the PHP session cookie is absent. Starting with 3.1.1
 the plain-text firmware replies `logged in from other IP address` and
 `max session time exceeded` are also reported as `admin_session_busy` instead
 of `invalid_auth`; earlier versions asked for the password again in that case.
-Update the integration before troubleshooting the NAS.
+Starting with 3.1.2 every authenticated request repeats the login's `Origin`,
+`Referer` and `X-Requested-With` headers. Firmware that binds the token to the
+login origin previously accepted the login and then rejected `device_info` and
+`system_info` with `request origin != token origin`, which Home Assistant
+reported as `invalid_auth`. Update the integration before troubleshooting the
+NAS.
 
 If the NAS still reports the account as in use:
 
@@ -261,13 +266,18 @@ The browser and Home Assistant may not use the same URL or the same source IP:
    every WD app. Wait 2-3 minutes, then enable the entry and retry once. A
    browser tab that still looks logged in can keep the single admin session
    active.
-4. Enable debug logging and retry once. A rejected login logs
+4. If the NAS log `/var/log/nasAdmin.log` shows
+   `"operation":"login","status":"success"` followed by
+   `request origin != token origin`, the firmware bound the token to the login
+   origin and rejected the data requests. This is fixed in 3.1.2; update the
+   integration.
+5. Enable debug logging and retry once. A rejected login logs
    `NAS login failed: HTTP ...`; a login that succeeded but failed on a data
    call logs `NAS <endpoint> request failed: HTTP ...`; a successful login logs
    `NAS login accepted`. The endpoint name in the second line shows whether the
    failure is on `device_info` or `system_info`. The login lines also list the
    cookie names and JSON body keys, never their values.
-5. If the debug log still only shows `invalid_auth`, run the diagnostic below
+6. If the debug log still only shows `invalid_auth`, run the diagnostic below
    from the Home Assistant host, not from the browser computer. It shows the
    NAS response and source-IP-specific result.
 
