@@ -17,6 +17,8 @@ from homeassistant.helpers import device_registry as dr
 
 from .client import MyCloudClient, status_code
 from .const import (
+    ACCOUNT_LOCKED_RETRY,
+    ADMIN_SESSION_BUSY_RETRY,
     CONF_HOST,
     CONF_PASSWORD,
     CONF_SERIAL,
@@ -102,13 +104,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> b
         # Repeated failed logins temporarily block the account or the client
         # IP. Retry later instead of asking for the password again.
         raise ConfigEntryNotReady(
-            translation_domain=DOMAIN, translation_key="account_locked"
+            translation_domain=DOMAIN,
+            translation_key="account_locked",
+            retry_after=ACCOUNT_LOCKED_RETRY,
         ) from err
     except AdminSessionBusyError as err:
         # Not a credential problem: another admin session is active. Retry
-        # with Home Assistant's setup backoff instead of asking for reauth.
+        # later instead of asking for reauth.
         raise ConfigEntryNotReady(
-            translation_domain=DOMAIN, translation_key="admin_session_busy"
+            translation_domain=DOMAIN,
+            translation_key="admin_session_busy",
+            retry_after=ADMIN_SESSION_BUSY_RETRY,
         ) from err
     except InvalidLoginError as err:
         raise ConfigEntryAuthFailed(

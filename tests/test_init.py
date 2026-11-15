@@ -18,7 +18,11 @@ from custom_components.mycloud import (
     async_setup_entry,
     async_unload_entry,
 )
-from custom_components.mycloud.const import DOMAIN
+from custom_components.mycloud.const import (
+    ACCOUNT_LOCKED_RETRY,
+    ADMIN_SESSION_BUSY_RETRY,
+    DOMAIN,
+)
 from custom_components.mycloud.wdnas import (
     AccountLockedError,
     AdminSessionBusyError,
@@ -142,6 +146,7 @@ async def test_setup_busy_admin_session_is_retried(hass, config_entry):
             await async_setup_entry(hass, config_entry)
 
     assert err.value.translation_key == "admin_session_busy"
+    assert err.value.retry_after == ADMIN_SESSION_BUSY_RETRY
     assert config_entry.runtime_data is None
 
 
@@ -155,6 +160,7 @@ async def test_setup_temporary_account_block_is_retried(hass, config_entry):
             await async_setup_entry(hass, config_entry)
 
     assert err.value.translation_key == "account_locked"
+    assert err.value.retry_after == ACCOUNT_LOCKED_RETRY
     assert config_entry.runtime_data is None
 
 
