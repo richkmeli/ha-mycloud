@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.5] - 2026-11-15
+
+### Fixed
+
+- Restore compatibility with Home Assistant 2026.8, which does not support `ConfigEntryNotReady.retry_after`. The account-lock and busy-session setup delays are applied when Home Assistant supports them and omitted otherwise, instead of failing setup with a `TypeError`.
+
 ## [3.0.4] - 2026-11-15
 
 ### Fixed
