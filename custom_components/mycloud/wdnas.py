@@ -15,11 +15,14 @@ from __future__ import annotations
 import base64
 import http.cookies
 import json
+import logging
 import re
 from typing import Any
 from xml.etree.ElementTree import Element, ParseError, fromstring
 
 import aiohttp
+
+_LOGGER = logging.getLogger(__name__)
 
 SCHEME = "http://"
 
@@ -44,9 +47,29 @@ _UPTIME_RE = re.compile(
 )
 _UPTIME_ELEMENT_RE = re.compile(r"<uptime>(.*?)</uptime>", re.IGNORECASE | re.DOTALL)
 
+# OS5 returns this instead of a plain 401 when the single admin session is
+# already active. The firmware localizes the message, so match a few stable
+# fragments rather than the full sentence.
+_LOGIN_BUSY_MARKERS = (
+    "account_in_use",
+    "account is currently in use",
+    "currently in use",
+    "already in use",
+    "in use",
+    "in uso",
+)
+
 
 class InvalidLoginError(Exception):
     """Raised when the NAS rejects the credentials or the login cookies."""
+
+
+class AdminSessionBusyError(InvalidLoginError):
+    """Raised when the NAS reports that another admin session is active.
+
+    OS5 accepts a single admin session. This is not a credential problem, so
+    callers should retry later instead of asking the user for the password.
+    """
 
 
 class RequestFailedError(Exception):
@@ -67,14 +90,49 @@ def parse_uptime_text(text: str) -> int | None:
     return days * 86400 + hours * 3600 + minutes * 60
 
 
+def _is_admin_session_busy(body: str) -> bool:
+    """Return True when a login response reports an active admin session."""
+    lowered = body.casefold()
+    return any(marker in lowered for marker in _LOGIN_BUSY_MARKERS)
+
+
+def _busy_message(body: str) -> str:
+    """Return a short single-line description of the busy login response."""
+    return " ".join(body.split())[:200] or "Another admin session is active"
+
+
 def _as_bool(value: str | None) -> bool:
-    """Convert a NAS numeric flag to a boolean."""
-    return bool(int(value)) if value not in (None, "") else False
+    """Convert a NAS flag to a boolean without failing the whole payload.
+
+    OS5 normally returns ``0`` or ``1``, but partially initialized disks can
+    return an empty element and some firmware revisions use textual flags.
+    """
+    if value is None:
+        return False
+    normalized = value.strip().casefold()
+    if normalized in ("", "0", "false", "no", "off"):
+        return False
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    try:
+        return int(normalized) != 0
+    except ValueError:
+        _LOGGER.debug("Unexpected boolean value from the NAS: %r", value)
+        return False
 
 
 def _as_int(value: str | None, default: int = 0) -> int:
     """Convert a NAS numeric field, falling back to a default."""
-    return int(value) if value not in (None, "") else default
+    if value is None:
+        return default
+    normalized = value.strip()
+    if not normalized:
+        return default
+    try:
+        return int(normalized)
+    except ValueError:
+        _LOGGER.debug("Unexpected integer value from the NAS: %r", value)
+        return default
 
 
 def _parse_xml(text: str) -> Element:
@@ -159,7 +217,10 @@ class WDNASClient:
             json={"username": self.username, "password": encoded_password},
             headers=headers,
         ) as response:
+            body = await response.text()
             if response.status != 200:
+                if _is_admin_session_busy(body):
+                    raise AdminSessionBusyError(_busy_message(body))
                 raise RequestFailedError(response.status)
 
             # The NAS scopes some cookies to the login path. Add them to the
@@ -171,6 +232,8 @@ class WDNASClient:
 
             cookies = response.cookies
             if "PHPSESSID" not in cookies:
+                if _is_admin_session_busy(body):
+                    raise AdminSessionBusyError(_busy_message(body))
                 raise InvalidLoginError(
                     "Invalid Username/Password or missing session cookie"
                 )
@@ -205,7 +268,7 @@ class WDNASClient:
         for disk in root.iter("disk"):
             data["disks"].append(
                 {
-                    "id": disk.attrib["id"],
+                    "id": disk.attrib.get("id"),
                     "name": disk.findtext("name"),
                     "connected": _as_bool(disk.findtext("connected")),
                     "vendor": disk.findtext("vendor"),
@@ -225,7 +288,7 @@ class WDNASClient:
         for volume in root.iter("vol"):
             data["volumes"].append(
                 {
-                    "id": volume.attrib["id"],
+                    "id": volume.attrib.get("id"),
                     "name": volume.findtext("name"),
                     "label": volume.findtext("label"),
                     "encrypted": _as_bool(volume.findtext("encrypted")),
@@ -247,7 +310,10 @@ class WDNASClient:
         payload = json.loads(await self._post_text("share_names"))
         if not payload.get("success"):
             raise RequestFailedError("Share list unavailable")
-        return payload["item"]
+        items = payload.get("item")
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict)]
 
     async def system_status(self) -> dict[str, Any]:
         """Return CPU and memory usage."""
@@ -393,6 +459,7 @@ class WDNASClient:
 __all__ = [
     "ENDPOINTS",
     "SCHEME",
+    "AdminSessionBusyError",
     "InvalidLoginError",
     "ParseError",
     "RequestFailedError",

@@ -15,13 +15,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .client import MyCloudClient, status_code
 from .const import (
+    ADMIN_SESSION_BUSY_RETRY,
     CONF_HOST,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
 from .entity import disk_key, volume_key
-from .wdnas import InvalidLoginError, RequestFailedError
+from .wdnas import AdminSessionBusyError, InvalidLoginError, RequestFailedError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,28 +59,7 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch all data used by the entities."""
         session = self.client.session
         if session is None or getattr(session, "closed", False) is True:
-            try:
-                await self.client.async_reconnect()
-            except InvalidLoginError as err:
-                raise ConfigEntryAuthFailed(
-                    translation_domain=DOMAIN, translation_key="invalid_auth"
-                ) from err
-            except RequestFailedError as err:
-                if status_code(err) in (401, 403):
-                    raise ConfigEntryAuthFailed(
-                        translation_domain=DOMAIN, translation_key="invalid_auth"
-                    ) from err
-                raise UpdateFailed(
-                    translation_domain=DOMAIN,
-                    translation_key="reconnect_failed",
-                    translation_placeholders={"error": str(err)},
-                ) from err
-            except Exception as err:
-                raise UpdateFailed(
-                    translation_domain=DOMAIN,
-                    translation_key="reconnect_failed",
-                    translation_placeholders={"error": str(err)},
-                ) from err
+            await self._async_reconnect()
 
         try:
             return await self._async_fetch()
@@ -87,6 +67,12 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN, translation_key="invalid_auth"
             ) from err
+        except ParseError as err:
+            # Some firmware revisions answer an expired session with a login
+            # HTML page instead of 401/403. Reconnect once and retry before
+            # leaving the entities unavailable until the next reload.
+            _LOGGER.debug("Malformed NAS response, reconnecting once: %s", err)
+            return await self._async_reconnect_and_fetch()
         except RequestFailedError as err:
             if status_code(err) not in (401, 403):
                 raise UpdateFailed(
@@ -97,29 +83,7 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # The NAS invalidated the PHP session. Log in again once before
             # reporting a failure, otherwise every poll would require a reload.
-            try:
-                await self.client.async_reconnect()
-                return await self._async_fetch()
-            except InvalidLoginError as retry_err:
-                raise ConfigEntryAuthFailed(
-                    translation_domain=DOMAIN, translation_key="invalid_auth"
-                ) from retry_err
-            except RequestFailedError as retry_err:
-                if status_code(retry_err) in (401, 403):
-                    raise ConfigEntryAuthFailed(
-                        translation_domain=DOMAIN, translation_key="invalid_auth"
-                    ) from retry_err
-                raise UpdateFailed(
-                    translation_domain=DOMAIN,
-                    translation_key="reauth_fetch_failed",
-                    translation_placeholders={"error": str(retry_err)},
-                ) from retry_err
-            except Exception as retry_err:
-                raise UpdateFailed(
-                    translation_domain=DOMAIN,
-                    translation_key="reauth_fetch_failed",
-                    translation_placeholders={"error": str(retry_err)},
-                ) from retry_err
+            return await self._async_reconnect_and_fetch()
         except (TimeoutError, aiohttp.ClientError, OSError) as err:
             raise UpdateFailed(
                 translation_domain=DOMAIN,
@@ -135,6 +99,73 @@ class MyCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 translation_key="unexpected_fetch_failed",
                 translation_placeholders={"error": str(err)},
             ) from err
+
+    async def _async_reconnect(self) -> None:
+        """Reconnect and map login failures to coordinator errors."""
+        try:
+            await self.client.async_reconnect()
+        except AdminSessionBusyError as err:
+            raise self._busy_failed(err) from err
+        except InvalidLoginError as err:
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN, translation_key="invalid_auth"
+            ) from err
+        except RequestFailedError as err:
+            if status_code(err) in (401, 403):
+                raise ConfigEntryAuthFailed(
+                    translation_domain=DOMAIN, translation_key="invalid_auth"
+                ) from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="reconnect_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        except Exception as err:
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="reconnect_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+
+    async def _async_reconnect_and_fetch(self) -> dict[str, Any]:
+        """Reconnect once after a rejected or malformed response."""
+        await self._async_reconnect()
+        try:
+            return await self._async_fetch()
+        except RequestFailedError as err:
+            if status_code(err) in (401, 403):
+                raise ConfigEntryAuthFailed(
+                    translation_domain=DOMAIN, translation_key="invalid_auth"
+                ) from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="reauth_fetch_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        except (TimeoutError, aiohttp.ClientError, OSError) as err:
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="cannot_connect",
+                translation_placeholders={
+                    "host": self._entry.data.get(CONF_HOST, ""),
+                    "error": str(err),
+                },
+            ) from err
+        except Exception as err:
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="reauth_fetch_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+
+    def _busy_failed(self, err: Exception) -> UpdateFailed:
+        """Return a delayed retry for the single admin session limitation."""
+        _LOGGER.debug("NAS admin session busy: %s", err)
+        return UpdateFailed(
+            translation_domain=DOMAIN,
+            translation_key="admin_session_busy",
+            retry_after=ADMIN_SESSION_BUSY_RETRY,
+        )
 
     async def _async_fetch(self) -> dict[str, Any]:
         """Fetch the data set exposed to the entities.

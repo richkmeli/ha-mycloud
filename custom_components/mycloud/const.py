@@ -22,3 +22,7 @@ MAX_UPDATE_INTERVAL = 86400
 # explicit timeout. Keep every request bounded so a dead NAS cannot block the
 # Home Assistant event loop forever.
 REQUEST_TIMEOUT = 30
+
+# OS5 accepts one admin session at a time. When another session is active,
+# wait before retrying instead of asking for the password or hammering the NAS.
+ADMIN_SESSION_BUSY_RETRY = 300

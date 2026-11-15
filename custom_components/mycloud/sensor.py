@@ -125,7 +125,7 @@ class MyCloudSensorBase(CoordinatorEntity, SensorEntity):
     """Base class for My Cloud sensors."""
 
     _attr_has_entity_name = True
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_state_class: SensorStateClass | None = SensorStateClass.MEASUREMENT
 
     def __init__(
         self,

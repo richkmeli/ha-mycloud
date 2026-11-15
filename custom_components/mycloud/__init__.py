@@ -26,7 +26,7 @@ from .const import (
 )
 from .coordinator import MyCloudCoordinator
 from .entity import build_device_info, get_disk, get_volume
-from .wdnas import InvalidLoginError, RequestFailedError
+from .wdnas import AdminSessionBusyError, InvalidLoginError, RequestFailedError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,6 +93,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> b
 
     try:
         await client.async_connect()
+    except AdminSessionBusyError as err:
+        # Not a credential problem: another admin session is active. Retry
+        # with Home Assistant's setup backoff instead of asking for reauth.
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN, translation_key="admin_session_busy"
+        ) from err
     except InvalidLoginError as err:
         raise ConfigEntryAuthFailed(
             translation_domain=DOMAIN, translation_key="invalid_auth"
@@ -136,7 +142,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> b
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
-        entry.runtime_data = None
+        entry.runtime_data = None  # type: ignore[assignment]
         await coordinator.async_close()
         raise
 
@@ -152,7 +158,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: MyCloudConfigEntry) -> 
     coordinator = entry.runtime_data
     if coordinator is not None:
         await coordinator.async_close()
-        entry.runtime_data = None
+        entry.runtime_data = None  # type: ignore[assignment]
 
     return True
 

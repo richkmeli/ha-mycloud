@@ -19,7 +19,11 @@ from custom_components.mycloud import (
     async_unload_entry,
 )
 from custom_components.mycloud.const import DOMAIN
-from custom_components.mycloud.wdnas import InvalidLoginError, RequestFailedError
+from custom_components.mycloud.wdnas import (
+    AdminSessionBusyError,
+    InvalidLoginError,
+    RequestFailedError,
+)
 
 
 @pytest.fixture
@@ -124,6 +128,19 @@ async def test_setup_invalid_credentials_starts_reauth(hass, config_entry):
             await async_setup_entry(hass, config_entry)
 
     assert err.value.translation_key == "invalid_auth"
+    assert config_entry.runtime_data is None
+
+
+async def test_setup_busy_admin_session_is_retried(hass, config_entry):
+    """Another admin session is a transient condition, not bad credentials."""
+    client = AsyncMock()
+    client.async_connect.side_effect = AdminSessionBusyError("account in use")
+
+    with patch("custom_components.mycloud.MyCloudClient", return_value=client):
+        with pytest.raises(ConfigEntryNotReady) as err:
+            await async_setup_entry(hass, config_entry)
+
+    assert err.value.translation_key == "admin_session_busy"
     assert config_entry.runtime_data is None
 
 

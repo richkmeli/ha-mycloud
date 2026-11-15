@@ -62,7 +62,7 @@ async def async_setup_entry(
     )
 
 
-class MyCloudPowerButton(CoordinatorEntity, ButtonEntity):
+class MyCloudPowerButton(CoordinatorEntity[MyCloudCoordinator], ButtonEntity):
     """Restart or shut down the NAS."""
 
     _attr_has_entity_name = True

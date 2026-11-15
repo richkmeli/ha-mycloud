@@ -1,3 +1,10 @@
+[tool.mypy]
+python_version = "3.14"
+files = ["custom_components/mycloud"]
+check_untyped_defs = true
+ignore_missing_imports = true
+show_error_codes = true
+
 [tool.ruff]
 target-version = "py313"
 line-length = 88

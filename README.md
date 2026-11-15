@@ -176,9 +176,31 @@ See [SECURITY.md](SECURITY.md) for the threat model, the audit findings and the 
 
 Verify the IP address or hostname, that the NAS web interface is reachable from Home Assistant and that the admin account is not already logged in elsewhere.
 
-### `invalid_auth`
+### `invalid_auth` or "account is currently in use"
 
-Use an admin account and verify the password. WD firmware allows only one active admin session, so this error can also mean that the NAS web interface is still logged in. Close the web session and retry.
+The NAS rejected the credentials, or the admin account is still in use. OS5
+allows only one active admin session, so the same message appears when:
+
+- the password is wrong;
+- a browser tab, the WD My Cloud app, WD Discovery or another Home Assistant
+  instance is logged in as the same admin;
+- Home Assistant itself still holds an admin session created before 3.0.1.
+
+Starting with 3.0.1 the integration releases its server-side session with
+`DELETE /nas/v1/auth` on unload, reconfigure and re-authentication. It also
+reports the busy response with a dedicated `admin_session_busy` error and
+retries later, instead of asking for the password again. Update the
+integration before troubleshooting the NAS.
+
+If the NAS still reports the account as in use:
+
+1. Disable the integration entry, or stop Home Assistant, to stop polling.
+2. Sign out of the NAS web interface and close every WD My Cloud and WD
+   Discovery session on phones and computers.
+3. Wait at least 30-60 minutes without any login attempt. Repeated attempts
+   renew the NAS session timeout.
+4. Re-enable the entry and retry. If the NAS remains locked, restart it once;
+   a reboot releases the stale admin sessions.
 
 ### `invalid_host`
 
@@ -231,6 +253,7 @@ python -m venv .venv
 pip install -r requirements-test.txt
 pytest --cov=custom_components/mycloud --cov-report=term-missing --cov-report=json
 python scripts/check_coverage.py
+mypy
 ruff check custom_components tests
 ruff format --check custom_components tests
 ```

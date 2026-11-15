@@ -11,8 +11,13 @@ import pytest
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+from custom_components.mycloud.const import ADMIN_SESSION_BUSY_RETRY
 from custom_components.mycloud.coordinator import MyCloudCoordinator
-from custom_components.mycloud.wdnas import InvalidLoginError, RequestFailedError
+from custom_components.mycloud.wdnas import (
+    AdminSessionBusyError,
+    InvalidLoginError,
+    RequestFailedError,
+)
 
 
 @pytest.fixture
@@ -186,6 +191,56 @@ async def test_update_reauthenticates_on_403(coordinator, client, nas_data):
     client.async_reconnect.assert_awaited_once()
 
 
+async def test_update_reconnects_after_a_parse_error(coordinator, client, nas_data):
+    """A login HTML page instead of XML triggers one reconnect and retry."""
+    client.system_info.side_effect = [
+        ParseError("no element found"),
+        nas_data["system_info"],
+    ]
+
+    data = await coordinator._async_update_data()
+
+    assert data["system_info"] == nas_data["system_info"]
+    client.async_reconnect.assert_awaited_once()
+    assert client.system_info.await_count == 2
+
+
+async def test_update_parse_error_after_reconnect_fails(coordinator, client):
+    """The reconnect-and-retry happens only once."""
+    client.system_info.side_effect = ParseError("no element found")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == "reauth_fetch_failed"
+    client.async_reconnect.assert_awaited_once()
+    assert client.system_info.await_count == 2
+
+
+async def test_update_busy_admin_session_retries_later(coordinator, client):
+    """The single-admin-session response is delayed, not sent to reauth."""
+    client.session = None
+    client.async_reconnect.side_effect = AdminSessionBusyError("account in use")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == "admin_session_busy"
+    assert err.value.retry_after == ADMIN_SESSION_BUSY_RETRY
+
+
+async def test_update_busy_session_after_expiry_retries_later(coordinator, client):
+    """A busy reconnect after a session expiry keeps the retry delay."""
+    client.system_info.side_effect = RequestFailedError(403)
+    client.async_reconnect.side_effect = AdminSessionBusyError("account in use")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == "admin_session_busy"
+    assert err.value.retry_after == ADMIN_SESSION_BUSY_RETRY
+
+
 async def test_update_reconnects_when_session_is_missing(coordinator, client):
     """A missing session is reopened before polling."""
     client.session = None
@@ -278,6 +333,25 @@ async def test_update_retry_after_session_expiry_errors(
         await coordinator._async_update_data()
 
     assert err.value.translation_key == key
+
+
+async def test_update_retry_transport_error_is_translated(coordinator, client):
+    """A transport error during the retry reports the configured host."""
+    client.system_info.side_effect = RequestFailedError(403)
+
+    async def reconnect() -> None:
+        client.system_info.side_effect = TimeoutError()
+
+    client.async_reconnect.side_effect = reconnect
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert err.value.translation_key == "cannot_connect"
+    assert err.value.translation_placeholders == {
+        "host": "nas.local",
+        "error": "",
+    }
 
 
 async def test_update_unexpected_error_is_translated(coordinator, client):

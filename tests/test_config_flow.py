@@ -14,7 +14,11 @@ from custom_components.mycloud.config_flow import (
     MyCloudOptionsFlow,
     normalize_host,
 )
-from custom_components.mycloud.wdnas import InvalidLoginError, RequestFailedError
+from custom_components.mycloud.wdnas import (
+    AdminSessionBusyError,
+    InvalidLoginError,
+    RequestFailedError,
+)
 
 
 @pytest.mark.parametrize(
@@ -156,6 +160,7 @@ async def test_user_flow_aborts_for_duplicate_unique_id(flow):
 @pytest.mark.parametrize(
     ("exception", "expected"),
     [
+        (AdminSessionBusyError("busy"), "admin_session_busy"),
         (InvalidLoginError("bad"), "invalid_auth"),
         (RequestFailedError(401), "invalid_auth"),
         (RequestFailedError(500), "cannot_connect"),
@@ -281,6 +286,7 @@ async def test_reauth_restores_the_entry_when_login_fails(reauth_flow):
 @pytest.mark.parametrize(
     ("exception", "expected"),
     [
+        (AdminSessionBusyError("busy"), "admin_session_busy"),
         (InvalidLoginError("bad"), "invalid_auth"),
         (RequestFailedError(401), "invalid_auth"),
         (RequestFailedError(500), "cannot_connect"),
@@ -574,6 +580,7 @@ async def test_reconfigure_rejects_invalid_host(reconfigure_flow):
 @pytest.mark.parametrize(
     ("exception", "expected"),
     [
+        (AdminSessionBusyError("busy"), "admin_session_busy"),
         (InvalidLoginError("bad"), "invalid_auth"),
         (RequestFailedError(401), "invalid_auth"),
         (RequestFailedError(500), "cannot_connect"),

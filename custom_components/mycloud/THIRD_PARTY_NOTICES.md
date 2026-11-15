@@ -23,7 +23,8 @@ Local changes:
   reconfigure and re-authentication release the NAS admin session.
 - Hardened login by requiring the `PHPSESSID` cookie, fixed group parsing in
   the account response and made missing optional numeric fields default to
-  zero instead of raising during parsing.
+  zero instead of raising during parsing. Missing disk and volume IDs,
+  textual flags and non-numeric fields are also tolerated.
 
 The following license applies to `wdnas.py` and to the upstream code it is
 based on. It does not grant a license for the rest of this repository.

@@ -20,6 +20,7 @@ import aiohttp
 from .const import REQUEST_TIMEOUT
 from .wdnas import (
     SCHEME,
+    AdminSessionBusyError,
     InvalidLoginError,
     RequestFailedError,
     WDNASClient,
@@ -203,6 +204,7 @@ class MyCloudClient(WDNASClient):
 
 
 __all__ = [
+    "AdminSessionBusyError",
     "InvalidLoginError",
     "MyCloudClient",
     "PowerActionBlockedError",

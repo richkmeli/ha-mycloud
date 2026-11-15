@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryState, ConfigFlowResult
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     TextSelector,
@@ -32,7 +32,7 @@ from .const import (
     MAX_UPDATE_INTERVAL,
     MIN_UPDATE_INTERVAL,
 )
-from .wdnas import InvalidLoginError, RequestFailedError
+from .wdnas import AdminSessionBusyError, InvalidLoginError, RequestFailedError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    ) -> ConfigFlowResult:
         """Handle the initial setup step."""
         errors: dict[str, str] = {}
 
@@ -147,6 +147,8 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await client.system_info()
                     title = str(device.get("name") or host).strip() or host
                     serial = str(device.get("serial_number") or "").strip()
+                except AdminSessionBusyError:
+                    errors["base"] = "admin_session_busy"
                 except InvalidLoginError:
                     errors["base"] = "invalid_auth"
                 except RequestFailedError as err:
@@ -197,13 +199,13 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_reauth(self, entry_data: dict[str, Any]) -> dict[str, Any]:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Handle a re-authentication request."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    ) -> ConfigFlowResult:
         """Ask for a new password and verify it."""
         errors: dict[str, str] = {}
 
@@ -219,6 +221,8 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 try:
                     await client.async_connect()
+                except AdminSessionBusyError:
+                    errors["base"] = "admin_session_busy"
                 except InvalidLoginError:
                     errors["base"] = "invalid_auth"
                 except RequestFailedError as err:
@@ -263,7 +267,7 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    ) -> ConfigFlowResult:
         """Update the host or credentials of an entry."""
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
@@ -290,6 +294,8 @@ class MyCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         await client.system_info()
                         title = str(device.get("name") or host).strip() or host
                         serial = str(device.get("serial_number") or "").strip()
+                    except AdminSessionBusyError:
+                        errors["base"] = "admin_session_busy"
                     except InvalidLoginError:
                         errors["base"] = "invalid_auth"
                     except RequestFailedError as err:
@@ -377,7 +383,7 @@ class MyCloudOptionsFlow(config_entries.OptionsFlowWithReload):
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    ) -> ConfigFlowResult:
         """Manage the polling interval."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)

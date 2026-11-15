@@ -42,7 +42,8 @@
     },
     "error": {
       "invalid_host": "Inserisci un hostname o un indirizzo IP senza schema, percorso o credenziali.",
-      "invalid_auth": "Nome utente o password non validi, oppure è già attiva un'altra sessione admin sul NAS.",
+      "invalid_auth": "Nome utente o password non validi.",
+      "admin_session_busy": "È già attiva un'altra sessione admin sul NAS. Chiudi l'interfaccia web del NAS e le app WD, attendi qualche minuto e riprova.",
       "cannot_connect": "Impossibile connettersi al NAS.",
       "unknown": "Errore imprevisto."
     },
@@ -163,6 +164,9 @@
   "exceptions": {
     "invalid_auth": {
       "message": "Credenziali WD My Cloud non valide."
+    },
+    "admin_session_busy": {
+      "message": "È già attiva un'altra sessione admin sul NAS. L'integrazione riproverà automaticamente."
     },
     "cannot_connect": {
       "message": "Impossibile connettersi a {host}: {error}"

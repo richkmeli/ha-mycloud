@@ -238,7 +238,7 @@ class MyCloudDiskConnectedSensor(MyCloudBinarySensorBase):
         self._disk_key = disk_key
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self) -> bool | None:
         """Return True while the disk is present and connected."""
         disk = get_disk(self.coordinator, self._disk_key)
         return as_bool(disk.get("connected")) if disk else False

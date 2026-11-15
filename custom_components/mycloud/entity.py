@@ -104,8 +104,9 @@ def build_disk_info(
         model=disk.get("model"),
         sw_version=firmware,
         hw_version=disk.get("rev"),
-        via_device_id=parent_device_id,
     )
+    if parent_device_id is not None:
+        info["via_device_id"] = parent_device_id
     if disk_serial := str(disk.get("sn") or "").strip():
         info["serial_number"] = disk_serial
     return info, key, name
@@ -137,8 +138,9 @@ def build_volume_info(
         name=name,
         manufacturer="Western Digital",
         model="Storage Volume",
-        via_device_id=parent_device_id,
     )
+    if parent_device_id is not None:
+        info["via_device_id"] = parent_device_id
     return info, key, name
 
 

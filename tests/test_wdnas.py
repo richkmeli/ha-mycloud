@@ -12,6 +12,7 @@ import pytest
 from custom_components.mycloud.wdnas import (
     ENDPOINTS,
     SCHEME,
+    AdminSessionBusyError,
     InvalidLoginError,
     RequestFailedError,
     WDNASClient,
@@ -348,6 +349,46 @@ async def test_login_reports_http_errors(client):
     assert err.value.status_code == 401
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"error": "ACCOUNT_IN_USE"}',
+        "The user account entered is currently in use.",
+        "L'account utente inserito è al momento in uso.",
+    ],
+)
+async def test_login_detects_an_active_admin_session(client, body):
+    """The single-admin-session response is not reported as bad credentials."""
+    client.session = _FakeSession(_FakeResponse(403, text=body))
+
+    with pytest.raises(AdminSessionBusyError) as err:
+        await client.login()
+
+    assert isinstance(err.value, InvalidLoginError)
+
+
+async def test_login_detects_busy_session_without_the_cookie(client):
+    """A busy response is recognised even when the NAS answers with 200."""
+    client.session = _FakeSession(
+        _FakeResponse(text="<html>The account is already in use.</html>")
+    )
+
+    with pytest.raises(AdminSessionBusyError):
+        await client.login()
+
+
+async def test_login_keeps_bad_credentials_separate_from_busy(client):
+    """A plain authentication failure is not mistaken for a busy session."""
+    client.session = _FakeSession(
+        _FakeResponse(401, text="Invalid username or password")
+    )
+
+    with pytest.raises(RequestFailedError) as err:
+        await client.login()
+
+    assert not isinstance(err.value, AdminSessionBusyError)
+
+
 async def test_login_requires_the_session_cookie(client):
     """A 200 response without PHPSESSID is not an authenticated session."""
     client.session = _FakeSession(_FakeResponse())
@@ -494,6 +535,68 @@ async def test_system_info_reports_malformed_xml(client):
         await client.system_info()
 
 
+async def test_system_info_tolerates_partial_disks_and_volumes(client):
+    """Missing IDs and unusual flags do not discard the whole payload."""
+    xml = """
+    <config>
+      <disks>
+        <disk>
+          <name>sda</name>
+          <connected>true</connected>
+          <healthy>yes</healthy>
+          <failed>no</failed>
+          <removable>2</removable>
+          <over_temp>maybe</over_temp>
+          <temp>not-a-number</temp>
+          <sleep>ON</sleep>
+        </disk>
+      </disks>
+      <vols>
+        <vol>
+          <name>Volume_1</name>
+          <mounted>1</mounted>
+          <size>42</size>
+        </vol>
+      </vols>
+      <total_size>42</total_size>
+    </config>
+    """
+    client.session = _FakeSession(_FakeResponse(text=xml))
+
+    data = await client.system_info()
+
+    assert data["disks"] == [
+        {
+            "id": None,
+            "name": "sda",
+            "connected": True,
+            "vendor": None,
+            "model": None,
+            "rev": None,
+            "sn": None,
+            "size": 0,
+            "failed": False,
+            "healthy": True,
+            "removable": True,
+            "over_temp": False,
+            "temp": 0,
+            "sleep": True,
+        }
+    ]
+    assert data["volumes"] == [
+        {
+            "id": None,
+            "name": "Volume_1",
+            "label": None,
+            "encrypted": False,
+            "unlocked": False,
+            "mounted": True,
+            "size": 42,
+        }
+    ]
+    assert data["size"] == {"total": 42, "used": 0, "unused": 0}
+
+
 async def test_share_names_returns_the_share_list(client):
     """The share endpoint returns the item list."""
     client.session = _FakeSession(_FakeResponse(text=SHARE_NAMES_JSON))
@@ -518,6 +621,13 @@ async def test_share_names_rejects_unsuccessful_responses(client):
         await client.share_names()
 
     assert err.value.status_code == "Share list unavailable"
+
+
+async def test_share_names_tolerates_a_missing_item_list(client):
+    """A successful response without items yields an empty share list."""
+    client.session = _FakeSession(_FakeResponse(text='{"success": true}'))
+
+    assert await client.share_names() == []
 
 
 async def test_system_status_parses_cpu_and_memory(client):
