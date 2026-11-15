@@ -50,13 +50,9 @@ _UPTIME_ELEMENT_RE = re.compile(r"<uptime>(.*?)</uptime>", re.IGNORECASE | re.DO
 # OS5 returns this instead of a plain 401 when the single admin session is
 # already active. The firmware localizes the message, so match a few stable
 # fragments rather than the full sentence.
-_LOGIN_BUSY_MARKERS = (
-    "account_in_use",
-    "account is currently in use",
-    "currently in use",
-    "already in use",
-    "in use",
-    "in uso",
+_LOGIN_BUSY_RE = re.compile(
+    r"account_in_use|\bin use\b|\bin uso\b",
+    re.IGNORECASE,
 )
 
 
@@ -92,8 +88,7 @@ def parse_uptime_text(text: str) -> int | None:
 
 def _is_admin_session_busy(body: str) -> bool:
     """Return True when a login response reports an active admin session."""
-    lowered = body.casefold()
-    return any(marker in lowered for marker in _LOGIN_BUSY_MARKERS)
+    return _LOGIN_BUSY_RE.search(body) is not None
 
 
 def _busy_message(body: str) -> str:

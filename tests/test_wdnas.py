@@ -377,11 +377,16 @@ async def test_login_detects_busy_session_without_the_cookie(client):
         await client.login()
 
 
-async def test_login_keeps_bad_credentials_separate_from_busy(client):
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Invalid username or password",
+        "Sign in user with your account",
+    ],
+)
+async def test_login_keeps_bad_credentials_separate_from_busy(client, body):
     """A plain authentication failure is not mistaken for a busy session."""
-    client.session = _FakeSession(
-        _FakeResponse(401, text="Invalid username or password")
-    )
+    client.session = _FakeSession(_FakeResponse(401, text=body))
 
     with pytest.raises(RequestFailedError) as err:
         await client.login()
