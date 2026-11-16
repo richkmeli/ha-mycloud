@@ -171,6 +171,7 @@ async def test_sensor_setup_creates_system_disk_and_volume_entities(
 
     unique_ids = {entity.unique_id for entity in entities}
     assert "NAS-SERIAL_cpu_usage" in unique_ids
+    assert "NAS-SERIAL_memory_usage" in unique_ids
     assert "NAS-SERIAL_alert_count" in unique_ids
     assert "NAS-SERIAL_latest_alert" in unique_ids
     assert "NAS-SERIAL_uptime" in unique_ids
@@ -686,6 +687,80 @@ async def test_memory_sensor_returns_none_for_invalid_totals(coordinator, config
         {"total": 0, "unused": 0},
         {"total": None, "unused": 0},
         {"total": 1000, "unused": None},
+        {"total": 1000, "available": None, "unused": None},
     ):
         coordinator.data["system_status"]["memory"] = memory_data
         assert memory.native_value is None
+
+
+async def test_memory_sensor_uses_mem_available_with_real_nas_values(
+    coordinator, config_entry
+):
+    """Memory usage excludes reclaimable cache, matching MemAvailable."""
+    config_entry.runtime_data = coordinator
+    async_add_entities = MagicMock()
+
+    await sensor.async_setup_entry(MagicMock(), config_entry, async_add_entities)
+    memory = {
+        type(entity).__name__: entity for entity in _entities(async_add_entities)
+    }["MyCloudMemorySensor"]
+
+    coordinator.data["system_status"]["memory"] = {
+        "total": 1_036_672,
+        "unused": 167_584,
+        "available": 441_856,
+        "cached": 399_392,
+        "buffers": 0,
+        "simple": "869088 / 1036672 MB",
+        "swap_total": 1_529_792,
+        "swap_free": 1_517_440,
+        "swap_used": 12_352,
+    }
+
+    assert memory.native_value == 57.38
+    assert memory.extra_state_attributes == {
+        "total": 1_036_672,
+        "available": 441_856,
+        "unused": 167_584,
+        "cached": 399_392,
+        "buffers": 0,
+        "simple": "869088 / 1036672 MB",
+        "swap_total": 1_529_792,
+        "swap_free": 1_517_440,
+        "swap_used": 12_352,
+        "swap_used_percent": 0.81,
+    }
+
+
+async def test_memory_sensor_clamps_and_omits_partial_swap_fields(
+    coordinator, config_entry
+):
+    """An inconsistent payload is clamped and partial swap fields are omitted."""
+    config_entry.runtime_data = coordinator
+    async_add_entities = MagicMock()
+
+    await sensor.async_setup_entry(MagicMock(), config_entry, async_add_entities)
+    memory = {
+        type(entity).__name__: entity for entity in _entities(async_add_entities)
+    }["MyCloudMemorySensor"]
+
+    coordinator.data["system_status"]["memory"] = {
+        "total": 1_000,
+        "available": 1_200,
+        "swap_total": 1_000,
+    }
+
+    assert memory.native_value == 0.0
+    assert memory.extra_state_attributes == {
+        "total": 1_000,
+        "available": 1_200,
+        "swap_total": 1_000,
+    }
+
+    coordinator.data["system_status"]["memory"] = {
+        "total": 1_000,
+        "available": 0,
+        "unused": 400,
+    }
+
+    assert memory.native_value == 60.0

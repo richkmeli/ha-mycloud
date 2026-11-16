@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.6] - 2026-11-16
+
+### Fixed
+
+- Memory usage now uses `MemAvailable` (`(MemTotal - MemAvailable) / MemTotal`)
+  instead of `MemFree`, so the reclaimable page cache and buffers are no longer
+  counted as used memory. On a 1 GB My Cloud running OS5 5.33.103 the sensor
+  drops from the misleading ~83.6% to the real ~57.4%. Firmware that does not
+  report `MemAvailable` keeps the previous `MemFree` calculation.
+- The memory sensor exposes `total`, `available`, `unused`, `cached`,
+  `buffers` and `simple` as attributes, plus `swap_total`, `swap_free`,
+  `swap_used` and `swap_used_percent` when the NAS reports the swap fields.
+  Entity IDs and unique IDs are unchanged.
+
+### Added
+
+- `scripts/diagnose_status.py` prints the `/cgi-bin/status_mgr.cgi` responses
+  (`cmd=resource`, `cmd=cgi_get_general` and `cmd=cgi_get_status`) with the
+  password and the session cookies redacted, so the memory fields exposed by a
+  firmware revision can be checked.
+
+### Changed
+
+- `system_status()` parses the optional `mem_available`, `mem_cached`,
+  `mem_buffers`, `swap_total` and `swap_free` fields in addition to the
+  existing `mem_total` and `mem_free` values.
+
 ## [3.1.5] - 2026-11-16
 
 ### Fixed

@@ -285,6 +285,37 @@ def _as_int(value: str | None, default: int = 0) -> int:
         return default
 
 
+def _field_text(root: Element, *names: str) -> str | None:
+    """Return the first non-empty leaf text matching one of the tag names.
+
+    The status endpoint is normally a flat XML document, but some firmware
+    revisions nest the memory fields inside a container. Matching by tag name
+    instead of a fixed path keeps the parser tolerant of both shapes.
+    """
+    wanted = set(names)
+    for element in root.iter():
+        if len(element):
+            continue
+        tag = element.tag.rsplit("}", 1)[-1].strip().lower()
+        if tag not in wanted:
+            continue
+        text = (element.text or "").strip()
+        if text:
+            return text
+    return None
+
+
+def _optional_int(value: str | None) -> int | None:
+    """Convert an optional NAS numeric field, returning None when absent."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        _LOGGER.debug("Unexpected integer value from the NAS: %r", value)
+        return None
+
+
 def _parse_xml(text: str) -> Element:
     """Parse XML returned by the configured NAS.
 
@@ -588,12 +619,34 @@ class WDNASClient:
             )
         )
         cpu = root.findtext(".//cpu")
+        memory: dict[str, Any] = {
+            "total": _as_int(_field_text(root, "mem_total", "memtotal")),
+            "unused": _as_int(_field_text(root, "mem_free", "memfree")),
+            "simple": _field_text(root, "mem2_total", "mem2total"),
+            "available": _optional_int(
+                _field_text(
+                    root,
+                    "mem_available",
+                    "memavailable",
+                    "mem_avail",
+                    "memavail",
+                )
+            ),
+            "cached": _optional_int(
+                _field_text(root, "mem_cached", "memcached", "cached")
+            ),
+            "buffers": _optional_int(
+                _field_text(root, "mem_buffers", "membuffers", "buffers")
+            ),
+            "swap_total": _optional_int(_field_text(root, "swap_total", "swaptotal")),
+            "swap_free": _optional_int(_field_text(root, "swap_free", "swapfree")),
+        }
+        if memory["swap_total"] is not None and memory["swap_free"] is not None:
+            memory["swap_used"] = max(memory["swap_total"] - memory["swap_free"], 0)
+        else:
+            memory["swap_used"] = None
         return {
-            "memory": {
-                "total": _as_int(root.findtext(".//mem_total")),
-                "unused": _as_int(root.findtext(".//mem_free")),
-                "simple": root.findtext(".//mem2_total"),
-            },
+            "memory": memory,
             "cpu": _as_int(cpu.strip("%")) if cpu is not None else 0,
         }
 

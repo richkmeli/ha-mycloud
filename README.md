@@ -8,7 +8,7 @@ This is a community fork of [J-shw/ha-mycloud](https://github.com/J-shw/ha-myclo
 
 - **Local polling only** — no cloud service, telemetry or third-party endpoint.
 - **HTTP and HTTPS** — an explicit HTTPS option for OS5 firmware that serves the web interface only over TLS, including the common port 8543 setup.
-- **System status** — CPU and memory usage, including the raw memory fields.
+- **System status** — CPU and memory usage based on `MemAvailable`, including the raw memory and swap fields as attributes.
 - **Device information** — serial number, name, model, firmware version and OLED text.
 - **Disks** — temperature, size, health, sleep, failure, over-temperature, connected, removable and hardware details.
 - **Volumes** — size, mounted, unlocked, encrypted and volume details.
@@ -120,6 +120,14 @@ Entity IDs depend on the device name. The examples below use `wd_my_cloud`; your
 - Disk temperature — `sensor.wd_my_cloud_disk_[disk_name]_temperature`
 - Disk size — `sensor.wd_my_cloud_disk_[disk_name]_size`
 - Volume size — `sensor.wd_my_cloud_volume_[volume_name]_size`
+
+Memory usage is `(MemTotal - MemAvailable) / MemTotal`, so the reclaimable
+page cache and buffers are not counted as used memory. Firmware that does not
+report `MemAvailable` falls back to the previous
+`(MemTotal - MemFree) / MemTotal` calculation. The sensor attributes expose the
+raw fields reported by the NAS (`total`, `available`, `unused`, `cached`,
+`buffers` and `simple`) and the swap usage (`swap_total`, `swap_free`,
+`swap_used` and `swap_used_percent`) when present.
 
 ### Binary sensors
 
@@ -323,6 +331,22 @@ secrets redacted. `MYCLOUD_HOST`, `MYCLOUD_USERNAME`, `MYCLOUD_PASSWORD` and
 `MYCLOUD_HTTPS=1` can replace the prompts and flags. The script is not imported
 by the integration and is not a runtime dependency. Close the NAS web interface
 first, and do not run it while an `account_locked` block is active.
+
+### Diagnose memory values
+
+To inspect the raw status payload reported by the firmware (for example to see
+which memory fields it exposes), run the standalone status diagnostic from a
+computer that can reach the NAS:
+
+```bash
+python3 -m pip install aiohttp
+python scripts/diagnose_status.py --host 192.168.1.10 --username admin
+```
+
+It prints the XML returned by `/cgi-bin/status_mgr.cgi` for `cmd=resource`,
+`cmd=cgi_get_general` and `cmd=cgi_get_status`. The password and the session
+cookies are redacted. The same environment variables as `diagnose_login.py`
+are accepted.
 
 ### Recover a stale admin session over SSH (optional)
 

@@ -187,12 +187,24 @@ class MyCloudMemorySensor(MyCloudSensorBase):
 
     @property
     def native_value(self) -> float | None:
-        """Return the memory usage percentage."""
+        """Return the memory usage percentage.
+
+        ``MemAvailable`` is the kernel estimate of the memory available for
+        new applications, so it excludes the reclaimable page cache and
+        buffers. Older firmware only reports ``MemFree``; the previous
+        calculation is kept as a fallback.
+        """
         status = coordinator_data(self.coordinator).get("system_status") or {}
         memory = status.get("memory") or {}
         total = as_int(memory.get("total"))
+        if total is None or total <= 0:
+            return None
+        available = as_int(memory.get("available"))
+        if available is not None and available > 0:
+            used = max(total - available, 0)
+            return round((used / total) * 100, 2)
         unused = as_int(memory.get("unused"))
-        if total is None or unused is None or total <= 0:
+        if unused is None:
             return None
         return round(((total - unused) / total) * 100, 2)
 
@@ -201,11 +213,29 @@ class MyCloudMemorySensor(MyCloudSensorBase):
         """Return the memory fields reported by the NAS."""
         status = coordinator_data(self.coordinator).get("system_status") or {}
         memory = status.get("memory") or {}
-        return {
+        attributes: dict[str, object] = {
             key: memory[key]
-            for key in ("total", "unused", "simple")
+            for key in (
+                "total",
+                "available",
+                "unused",
+                "cached",
+                "buffers",
+                "simple",
+            )
             if memory.get(key) is not None
         }
+        swap_total = as_int(memory.get("swap_total"))
+        swap_free = as_int(memory.get("swap_free"))
+        if swap_total is not None:
+            attributes["swap_total"] = swap_total
+        if swap_free is not None:
+            attributes["swap_free"] = swap_free
+        if swap_total is not None and swap_free is not None and swap_total > 0:
+            swap_used = max(swap_total - swap_free, 0)
+            attributes["swap_used"] = swap_used
+            attributes["swap_used_percent"] = round((swap_used / swap_total) * 100, 2)
+        return attributes
 
 
 class MyCloudStorageSensor(MyCloudSensorBase):

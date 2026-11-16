@@ -296,8 +296,8 @@ async def test_uptime_from_status_uses_configured_host():
     ]
 
 
-async def test_uptime_from_status_omits_origin_headers():
-    """The status fallback must not send Origin/Referer/X-Requested-With."""
+async def test_uptime_from_status_sends_login_origin_headers():
+    """The status fallback repeats the login origin headers."""
     client = MyCloudClient("admin", "secret", "nas.local")
     session = _RecordingSession(
         [_FakeResponse(200, "<uptime>1 day 2 hours 3 minutes</uptime>")]
@@ -306,9 +306,9 @@ async def test_uptime_from_status_omits_origin_headers():
 
     assert await client._async_uptime_from_status() == 93_780
     _, _, headers = session.calls[0]
-    assert "Origin" not in headers
-    assert "Referer" not in headers
-    assert "X-Requested-With" not in headers
+    assert headers["Origin"] == "http://nas.local"
+    assert headers["Referer"] == "http://nas.local/"
+    assert headers["X-Requested-With"] == "XMLHttpRequest"
 
 
 async def test_uptime_from_status_returns_none_on_error():
@@ -400,11 +400,11 @@ async def test_power_action_checks_safety_then_shuts_down():
     assert session.calls[0][0] == "http://nas.local/cgi-bin/hd_config.cgi"
     assert session.calls[1][0] == "http://nas.local/cgi-bin/system_mgr.cgi"
     assert all(call[2]["Host"] == "nas.local" for call in session.calls)
-    # Legacy CGI endpoints must not receive Origin/Referer/X-Requested-With.
+    # Legacy CGI endpoints repeat the login origin, like all data requests.
     for _, _, headers in session.calls:
-        assert "Origin" not in headers
-        assert "Referer" not in headers
-        assert "X-Requested-With" not in headers
+        assert headers["Origin"] == "http://nas.local"
+        assert headers["Referer"] == "http://nas.local/"
+        assert headers["X-Requested-With"] == "XMLHttpRequest"
 
 
 async def test_power_action_uses_https_urls_when_requested():

@@ -75,6 +75,20 @@ SYSTEM_STATUS_XML = """
 </root>
 """
 
+SYSTEM_STATUS_REAL_XML = """
+<root>
+  <cpu>7%</cpu>
+  <mem_total>1036672</mem_total>
+  <mem_free>167584</mem_free>
+  <mem_available>441856</mem_available>
+  <mem_cached>399392</mem_cached>
+  <mem_buffers>0</mem_buffers>
+  <mem2_total>869088 / 1036672 MB</mem2_total>
+  <swap_total>1529792</swap_total>
+  <swap_free>1517440</swap_free>
+</root>
+"""
+
 NETWORK_XML = """
 <info>
   <lan>
@@ -1182,9 +1196,62 @@ async def test_system_status_parses_cpu_and_memory(client):
             "total": 1000,
             "unused": 400,
             "simple": "400 / 1000 MB",
+            "available": None,
+            "cached": None,
+            "buffers": None,
+            "swap_total": None,
+            "swap_free": None,
+            "swap_used": None,
         },
     }
     assert client.session.calls[0][2]["data"] == "cmd=resource"
+
+
+async def test_system_status_reads_mem_available_cache_and_swap(client):
+    """Current firmware exposes MemAvailable, cache and swap fields."""
+    client.session = _FakeSession(_FakeResponse(text=SYSTEM_STATUS_REAL_XML))
+
+    data = await client.system_status()
+
+    assert data["cpu"] == 7
+    assert data["memory"] == {
+        "total": 1036672,
+        "unused": 167584,
+        "simple": "869088 / 1036672 MB",
+        "available": 441856,
+        "cached": 399392,
+        "buffers": 0,
+        "swap_total": 1529792,
+        "swap_free": 1517440,
+        "swap_used": 12352,
+    }
+
+
+async def test_system_status_tolerates_invalid_optional_memory_fields(client):
+    """Malformed optional fields fall back without losing the valid ones."""
+    client.session = _FakeSession(
+        _FakeResponse(
+            text=(
+                "<root><cpu>7%</cpu><mem_total>1000</mem_total>"
+                "<mem_free>400</mem_free><mem_available>unknown</mem_available>"
+                "<swap_total>1000</swap_total></root>"
+            )
+        )
+    )
+
+    data = await client.system_status()
+
+    assert data["memory"] == {
+        "total": 1000,
+        "unused": 400,
+        "simple": None,
+        "available": None,
+        "cached": None,
+        "buffers": None,
+        "swap_total": 1000,
+        "swap_free": None,
+        "swap_used": None,
+    }
 
 
 async def test_system_status_defaults_missing_fields(client):
@@ -1195,7 +1262,17 @@ async def test_system_status_defaults_missing_fields(client):
 
     assert data == {
         "cpu": 0,
-        "memory": {"total": 0, "unused": 0, "simple": None},
+        "memory": {
+            "total": 0,
+            "unused": 0,
+            "simple": None,
+            "available": None,
+            "cached": None,
+            "buffers": None,
+            "swap_total": None,
+            "swap_free": None,
+            "swap_used": None,
+        },
     }
 
     client.session = _FakeSession(
@@ -1203,7 +1280,17 @@ async def test_system_status_defaults_missing_fields(client):
     )
     assert await client.system_status() == {
         "cpu": 0,
-        "memory": {"total": 0, "unused": 0, "simple": None},
+        "memory": {
+            "total": 0,
+            "unused": 0,
+            "simple": None,
+            "available": None,
+            "cached": None,
+            "buffers": None,
+            "swap_total": None,
+            "swap_free": None,
+            "swap_used": None,
+        },
     }
 
 
@@ -1370,25 +1457,25 @@ async def test_uptime_rejects_an_unknown_format(client):
     assert str(err.value) == "Request failed: Unexpected uptime format: soon"
 
 
-async def test_legacy_cgi_endpoints_omit_origin_headers(client):
-    """Status and uptime calls to /cgi-bin/ must not send Origin/Referer headers."""
+async def test_legacy_cgi_endpoints_send_login_origin_headers(client):
+    """Status and uptime calls to /cgi-bin/ repeat the login origin headers."""
     client.session = _FakeSession(_FakeResponse(text=UPTIME_XML))
 
     await client.uptime()
 
     headers = client.session.calls[0][2]["headers"]
-    assert "Origin" not in headers
-    assert "Referer" not in headers
-    assert "X-Requested-With" not in headers
+    assert headers["Origin"] == "http://nas.local:8080"
+    assert headers["Referer"] == "http://nas.local:8080/"
+    assert headers["X-Requested-With"] == "XMLHttpRequest"
 
     client.session = _FakeSession(_FakeResponse(text=SYSTEM_STATUS_XML))
 
     await client.system_status()
 
     headers = client.session.calls[0][2]["headers"]
-    assert "Origin" not in headers
-    assert "Referer" not in headers
-    assert "X-Requested-With" not in headers
+    assert headers["Origin"] == "http://nas.local:8080"
+    assert headers["Referer"] == "http://nas.local:8080/"
+    assert headers["X-Requested-With"] == "XMLHttpRequest"
 
 
 async def test_transport_errors_propagate_to_the_caller(client):
