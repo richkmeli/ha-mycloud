@@ -577,13 +577,14 @@ class WDNASClient:
     async def system_status(self) -> dict[str, Any]:
         """Return CPU and memory usage.
 
-        The status endpoint is a legacy CGI under ``/cgi-bin/`` and must not
-        send the Origin/Referer/X-Requested-With headers that nasAdmin
-        requires on /nas/v1/auth.
+        The status endpoint is a legacy CGI under ``/cgi-bin/``.  It sends the
+        same ``Origin``/``Referer``/``X-Requested-With`` headers as the login;
+        otherwise nasAdmin rejects the request with ``request origin != token
+        origin`` (HTTP 403).
         """
         root = _parse_xml(
             await self._post_text(
-                "system_status", "cmd=resource", form=True, origin=False
+                "system_status", "cmd=resource", form=True, origin=True
             )
         )
         cpu = root.findtext(".//cpu")
@@ -709,12 +710,13 @@ class WDNASClient:
     async def uptime(self) -> int:
         """Return the NAS uptime in seconds.
 
-        The uptime endpoint is a legacy CGI under ``/cgi-bin/`` and must not
-        send the Origin/Referer/X-Requested-With headers that nasAdmin
-        requires on /nas/v1/auth.
+        The uptime endpoint is a legacy CGI under ``/cgi-bin/``.  It sends the
+        same ``Origin``/``Referer``/``X-Requested-With`` headers as the login;
+        otherwise nasAdmin rejects the request with ``request origin != token
+        origin`` (HTTP 403).
         """
         text = await self._post_text(
-            "uptime", "cmd=cgi_get_uptime", form=True, origin=False
+            "uptime", "cmd=cgi_get_uptime", form=True, origin=True
         )
         match = _UPTIME_ELEMENT_RE.search(text)
         if match is None:

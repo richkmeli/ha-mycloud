@@ -110,7 +110,7 @@ class MyCloudClient(WDNASClient):
         """
         try:
             text = await self._post_text(
-                "uptime", "cmd=cgi_get_status", form=True, origin=False
+                "uptime", "cmd=cgi_get_status", form=True, origin=True
             )
         except (
             RequestFailedError,
@@ -137,9 +137,10 @@ class MyCloudClient(WDNASClient):
             raise ValueError(f"Unsupported power action: {action}") from err
 
         session = self._require_session()
-        # Legacy CGI endpoints under /cgi-bin/ predate CORS and reject the
-        # Origin/Referer/X-Requested-With headers that nasAdmin requires.
-        headers = self._headers(form=True, origin=False)
+        # Send the same Origin/Referer/X-Requested-With headers as the login;
+        # otherwise nasAdmin rejects the request with ``request origin != token
+        # origin`` (HTTP 403).
+        headers = self._headers(form=True, origin=True)
 
         async with self._power_lock:
             safety_url = f"{self.scheme}{self.host}{_POWER_SAFETY_PATH}"
