@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.5] - 2026-11-16
+
+### Fixed
+
+- `system_status`, `uptime` and the `cgi_get_status` uptime fallback send the
+  login's `Origin`/`Referer`/`X-Requested-With` headers again. Current OS5
+  firmware binds the authentication token to the login origin and answers
+  HTTP 403 (`request origin != token origin`) when those headers are missing
+  on `/cgi-bin/status_mgr.cgi`. The integration accepted the login and then
+  failed every poll with `invalid_auth`; the coordinator reconnected once and
+  then raised `ConfigEntryAuthFailed`.
+- The power actions (`cgi_Detect_Dangerous`, `cgi_restart`, `cgi_shutdown`)
+  send the same origin headers as the login for the same reason.
+
 ## [3.1.4] - 2026-11-16
 
 ### Fixed
