@@ -194,7 +194,7 @@
       "message": "Unexpected error fetching data from the NAS: {error}"
     },
     "power_action_blocked": {
-      "message": "The NAS refused the power action because its safety check returned code {code}."
+      "message": "The NAS refused the power action because its safety check returned code {code}. Check the NAS dashboard for RAID, firmware or maintenance warnings, then retry."
     },
     "power_action_failed": {
       "message": "The power action failed: {error}"

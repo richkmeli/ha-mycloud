@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.7] - 2026-11-16
+
+### Fixed
+
+- `scripts/diagnose_power.py` now logs in with the same request as the
+  integration and sends the login's `Origin`/`Referer`/`X-Requested-With`
+  headers to the safety-check endpoint. The previous version sent neither the
+  session cookies nor the origin headers, so it could not reproduce the
+  integration's `cgi_Detect_Dangerous` request on current OS5 firmware.
+- The diagnostic prints the HTTP status, the redacted response body and the
+  parsed numeric `<res>` code. A non-zero code is reported as a refusal by the
+  NAS, separately from a login or HTTP failure. It still never sends
+  `cgi_restart` or `cgi_shutdown`.
+
+### Changed
+
+- README explains that safety-check codes such as `6` are produced by the NAS
+  firmware, are not documented by WD, and must not be bypassed. It now asks for
+  the diagnostic's `Safety check result` line when the refusal persists.
+
 ## [3.1.6] - 2026-11-16
 
 ### Fixed

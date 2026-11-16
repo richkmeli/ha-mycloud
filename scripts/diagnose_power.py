@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Diagnose WD My Cloud OS5 power-action endpoints without powering off the NAS.
 
-The script performs exactly one authenticated request to the safety-check
-endpoint ``POST /cgi-bin/hd_config.cgi`` with ``cmd=cgi_Detect_Dangerous``,
-the same call the integration makes before restarting or shutting down. It
-then reports whether the NAS accepts the request or returns HTTP 403.
+The script logs in with the same request as the integration, then performs
+exactly one authenticated request to the safety-check endpoint
+``POST /cgi-bin/hd_config.cgi`` with ``cmd=cgi_Detect_Dangerous``, the same
+call the integration makes before restarting or shutting down. It reports the
+HTTP status, the response body and the numeric ``<res>`` safety code, so a
+refused power action can be distinguished from a rejected request or a login
+problem.
 
 It does NOT send ``cgi_shutdown`` or ``cgi_restart``, so it is safe to run on
 a production NAS.
@@ -34,11 +37,13 @@ import os
 import re
 import sys
 from urllib.parse import urlsplit
+from xml.etree.ElementTree import ParseError, fromstring
 
 import aiohttp
 
 SCHEME = "http://"
 HTTPS_SCHEME = "https://"
+LOGIN_PATH = "/nas/v1/auth"
 SAFETY_PATH = "/cgi-bin/hd_config.cgi"
 SAFETY_COMMAND = "cmd=cgi_Detect_Dangerous"
 DEFAULT_TIMEOUT = 30
@@ -125,6 +130,64 @@ def _scheme(use_https: bool) -> str:
     return HTTPS_SCHEME if use_https else SCHEME
 
 
+def _headers(
+    host: str,
+    use_https: bool,
+    *,
+    form: bool = False,
+    origin: bool = True,
+) -> dict[str, str]:
+    """Return the headers used by the integration for the same request.
+
+    Current OS5 firmware binds the authentication token to the login origin,
+    so every authenticated request, including the legacy ``/cgi-bin/`` power
+    endpoints, must repeat the same ``Origin``/``Referer`` headers.
+    """
+    headers = {"Host": host}
+    if origin:
+        origin_url = f"{_scheme(use_https)}{host}"
+        headers["Origin"] = origin_url
+        headers["Referer"] = f"{origin_url}/"
+        headers["X-Requested-With"] = "XMLHttpRequest"
+    if form:
+        headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+    return headers
+
+
+def _login_cookies(
+    response: aiohttp.ClientResponse,
+) -> http.cookies.SimpleCookie:
+    """Return the cookies set by a login response and its redirect chain."""
+    cookies = http.cookies.SimpleCookie()
+    for item in (*response.history, response):
+        for header in item.headers.getall("Set-Cookie", []):
+            try:
+                cookies.load(header)
+            except http.cookies.CookieError:
+                print("Ignoring a malformed Set-Cookie header")
+    return cookies
+
+
+def _parse_safety_code(body: str) -> int:
+    """Return the numeric ``res`` value of a safety-check response.
+
+    A missing or non-numeric result is not treated as safe: it means the
+    integration would reject the action with a parse error instead of sending
+    a restart or shutdown command.
+    """
+    try:
+        root = fromstring(body)  # noqa: S314 - the NAS is configured by the user
+    except ParseError as err:
+        raise ParseError("Safety response is not valid XML") from err
+    result = root.findtext(".//res")
+    if result is None:
+        raise ParseError("Safety response has no res element")
+    try:
+        return int(result)
+    except ValueError as err:
+        raise ParseError("Safety res element is not numeric") from err
+
+
 def _has_session_cookie(cookies: http.cookies.SimpleCookie) -> bool:
     """Return True when a cookie set contains a non-empty session cookie."""
     return any(bool(morsel.value) for morsel in cookies.values())
@@ -200,54 +263,109 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def _diagnose(host: str, username: str, password: str, args) -> int:
-    """Run one safety-check request and return a process exit code."""
+    """Log in, run one safety-check request and return a process exit code."""
     scheme = _scheme(args.https)
-    url = f"{scheme}{host}{SAFETY_PATH}"
-    headers = {
-        "Host": host,
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    }
-    # Legacy CGI endpoints under /cgi-bin/ must NOT receive Origin/Referer /
-    # X-Requested-With, otherwise OS5 rejects them with HTTP 403.
+    login_url = f"{scheme}{host}{LOGIN_PATH}"
+    safety_url = f"{scheme}{host}{SAFETY_PATH}"
+    encoded_password = base64.b64encode(password.encode("utf-8")).decode("utf-8")
 
-    print(f"URL: {url}")
+    login_headers = _headers(host, args.https)
+    login_headers["Content-Type"] = "application/json"
+    login_headers["Accept"] = "application/json"
+    safety_headers = _headers(host, args.https, form=True)
+
+    print(f"Login URL: {login_url}")
+    print(f"Safety URL: {safety_url}")
     print(f"Username: {username.lower()}")
     print(f"Command: {SAFETY_COMMAND}")
+    print("Power commands: not sent (cgi_restart and cgi_shutdown are disabled)")
+    print("Origin/Referer/X-Requested-With: sent, matching the login")
     if args.https:
         print("TLS certificate verification: disabled (WD self-signed certificate)")
-    print("Origin/Referer/X-Requested-With: omitted (legacy CGI)")
 
     timeout = aiohttp.ClientTimeout(total=args.timeout)
     connector = aiohttp.TCPConnector(ssl=False) if args.https else None
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         try:
             async with session.post(
-                url, data=SAFETY_COMMAND, headers=headers
+                login_url,
+                json={"username": username.lower(), "password": encoded_password},
+                headers=login_headers,
+            ) as response:
+                await response.text()
+                cookies = _login_cookies(response)
+                names = [name for name, morsel in cookies.items() if morsel.value]
+                print(
+                    f"\nLogin: HTTP {response.status}, "
+                    f"{len(response.history)} redirect(s), "
+                    f"cookies: {', '.join(sorted(names)) or 'none'}"
+                )
+                _print_redirects(response)
+                _print_set_cookie(response)
+                _print_cookie_sources(response, session)
+                if response.status != 200 or not _has_session_cookie(cookies):
+                    print(
+                        "Login was not accepted; the safety check needs a usable "
+                        "admin session. Close every NAS browser tab and WD app, "
+                        "then retry.",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+            for name, morsel in cookies.items():
+                if morsel.value:
+                    session.cookie_jar.update_cookies({name: morsel.value})
+
+            async with session.post(
+                safety_url, data=SAFETY_COMMAND, headers=safety_headers
             ) as response:
                 body = await response.text()
-                print(f"\nHTTP status: {response.status}")
+                print(f"\nSafety check HTTP status: {response.status}")
                 print(f"Final URL: {_redact_location(str(response.url))}")
                 print(
                     f"Content-Type: {response.headers.get('Content-Type', '<missing>')}"
                 )
                 print(f"Body length: {len(body)} characters")
-                _print_redirects(response)
-                _print_set_cookie(response)
-                _print_cookie_sources(response, session)
-                print("\nResponse body (secrets redacted):")
+                print("\nSafety response body (secrets redacted):")
                 print(_redact_body(body, args.body_limit, password))
 
-                ok = response.status == 200
-                print(f"\nPower-action safety endpoint usable: {'yes' if ok else 'no'}")
-                if not ok:
+                if response.status != 200:
                     print(
-                        "The NAS rejected the safety-check request with HTTP 403. "
-                        "This is why Restart/Shutdown fail in Home Assistant. "
-                        "Verify that no browser tab or WD app is logged in as admin, "
-                        "then retry."
+                        f"\nThe NAS rejected the safety-check request with HTTP "
+                        f"{response.status}. This is not a safety refusal: verify "
+                        "the login, the host and the Origin headers.",
+                        file=sys.stderr,
                     )
                     return 1
-                return 0
+
+                try:
+                    code = _parse_safety_code(body)
+                except ParseError as err:
+                    print(
+                        f"\nSafety check result: unparseable ({err}). "
+                        "The integration treats this as an error and does not "
+                        "send a power command.",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+                if code == 0:
+                    print(
+                        "\nSafety check result: 0. The NAS would allow the power "
+                        "action."
+                    )
+                    return 0
+
+                print(
+                    f"\nSafety check result: {code}. The NAS refuses the power "
+                    "action with this code."
+                )
+                print(
+                    "The integration stops here and does not send cgi_restart or "
+                    "cgi_shutdown. Wait for maintenance activity to finish and "
+                    "check the NAS dashboard for RAID, firmware or volume warnings."
+                )
+                return 1
         except (TimeoutError, aiohttp.ClientError, OSError) as err:
             print(f"\nRequest failed: {type(err).__name__}: {err}", file=sys.stderr)
             return 2

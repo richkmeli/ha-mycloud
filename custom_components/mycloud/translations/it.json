@@ -194,7 +194,7 @@
       "message": "Errore imprevisto durante il recupero dei dati dal NAS: {error}"
     },
     "power_action_blocked": {
-      "message": "Il NAS ha rifiutato l'azione di alimentazione perché il controllo di sicurezza ha restituito il codice {code}."
+      "message": "Il NAS ha rifiutato l'azione di alimentazione perché il controllo di sicurezza ha restituito il codice {code}. Controlla la dashboard del NAS per avvisi su RAID, firmware o manutenzione, quindi riprova."
     },
     "power_action_failed": {
       "message": "Azione di alimentazione non riuscita: {error}"
