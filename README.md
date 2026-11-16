@@ -233,12 +233,15 @@ longer rejected because the PHP session cookie is absent. Starting with 3.1.1
 the plain-text firmware replies `logged in from other IP address` and
 `max session time exceeded` are also reported as `admin_session_busy` instead
 of `invalid_auth`; earlier versions asked for the password again in that case.
-Starting with 3.1.2 every authenticated request repeats the login's `Origin`,
-`Referer` and `X-Requested-With` headers. Firmware that binds the token to the
-login origin previously accepted the login and then rejected `device_info` and
-`system_info` with `request origin != token origin`, which Home Assistant
-reported as `invalid_auth`. Update the integration before troubleshooting the
-NAS.
+Starting with 3.1.5 every authenticated request, including the legacy
+`/cgi-bin/` endpoints (`system_status`, `uptime` and the power actions),
+repeats the login's `Origin`, `Referer` and `X-Requested-With` headers.
+Firmware that binds the token to the login origin otherwise accepts the login
+and then rejects the data requests with `request origin != token origin`
+(HTTP 403), which Home Assistant reports as `invalid_auth`. Versions 3.1.3
+and 3.1.4 omitted those headers on the CGI endpoints for older firmware;
+3.1.5 requires current OS5 firmware. Update the integration before
+troubleshooting the NAS.
 
 If the NAS still reports the account as in use:
 
@@ -280,9 +283,10 @@ The browser and Home Assistant may not use the same URL or the same source IP:
    active.
 4. If the NAS log `/var/log/nasAdmin.log` shows
    `"operation":"login","status":"success"` followed by
-   `request origin != token origin`, the firmware bound the token to the login
-   origin and rejected the data requests. This is fixed in 3.1.2; update the
-   integration.
+   `request origin != token origin`, or the debug log shows
+   `NAS system_status request failed: HTTP 403` right after
+   `NAS login accepted`, the firmware bound the token to the login origin and
+   rejected the data requests. Update the integration to 3.1.5 or newer.
 5. Enable debug logging and retry once. A rejected login logs
    `NAS login failed: HTTP ...`; a login that succeeded but failed on a data
    call logs `NAS <endpoint> request failed: HTTP ...`; a successful login logs
